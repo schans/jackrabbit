@@ -259,7 +259,7 @@ class ItemSaveOperation implements SessionWriteOperation<Object> {
             // update operation succeeded
             succeeded = true;
         } catch (StaleItemStateException e) {
-            throw new InvalidItemStateException(e.getMessage());
+            throw new InvalidItemStateException(e.getMessage(), e);
         } catch (ItemStateException e) {
             throw new RepositoryException(
                     "Unable to update item: " + this, e);

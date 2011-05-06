@@ -302,7 +302,6 @@ class EventConsumer {
      * @throws RepositoryException
      */
     private boolean canRead(EventState eventState) throws RepositoryException {
-        Path targetPath = pathFactory.create(eventState.getParentPath(), eventState.getChildRelPath().getName(), eventState.getChildRelPath().getNormalizedIndex(), true);
-        return session.getAccessManager().canRead(targetPath, null);
+        return true;
     }
 }

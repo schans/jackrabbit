@@ -782,11 +782,11 @@ public class UserManagerSearchTest extends AbstractUserTest {
         Set<? extends T> set1 = toSet(it1);
         Set<? extends T> set2 = toSet(it2);
 
-        Set<? super T> missing = new HashSet<T>();
+        Set missing = new HashSet<T>();
         missing.addAll(set2);
         missing.removeAll(set1);
 
-        Set<? super T> excess = new HashSet<T>();
+        Set excess = new HashSet<T>();
         excess.addAll(set1);
         excess.removeAll(set2);
 
