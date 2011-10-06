@@ -16,6 +16,29 @@
  */
 package org.apache.jackrabbit.core.query.lucene;
 
+import java.io.File;
+import java.io.IOException;
+import java.io.InputStream;
+import java.net.MalformedURLException;
+import java.net.URL;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collection;
+import java.util.Collections;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+
+import javax.jcr.RepositoryException;
+import javax.jcr.query.InvalidQueryException;
+import javax.xml.parsers.DocumentBuilder;
+import javax.xml.parsers.DocumentBuilderFactory;
+import javax.xml.parsers.ParserConfigurationException;
+
 import org.apache.jackrabbit.core.HierarchyManager;
 import org.apache.jackrabbit.core.SessionImpl;
 import org.apache.jackrabbit.core.fs.FileSystem;
@@ -61,39 +84,13 @@ import org.apache.lucene.search.Sort;
 import org.apache.lucene.search.SortField;
 import org.apache.lucene.search.TermQuery;
 import org.apache.tika.config.TikaConfig;
-import org.apache.tika.exception.TikaException;
 import org.apache.tika.fork.ForkParser;
-import org.apache.tika.metadata.Metadata;
 import org.apache.tika.parser.AutoDetectParser;
-import org.apache.tika.parser.ParseContext;
 import org.apache.tika.parser.Parser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.w3c.dom.Element;
-import org.xml.sax.ContentHandler;
 import org.xml.sax.SAXException;
-
-import javax.jcr.RepositoryException;
-import javax.jcr.query.InvalidQueryException;
-import javax.xml.parsers.DocumentBuilder;
-import javax.xml.parsers.DocumentBuilderFactory;
-import javax.xml.parsers.ParserConfigurationException;
-import java.io.File;
-import java.io.IOException;
-import java.io.InputStream;
-import java.net.MalformedURLException;
-import java.net.URL;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.Collection;
-import java.util.Collections;
-import java.util.Comparator;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.Iterator;
-import java.util.List;
-import java.util.Map;
-import java.util.Set;
 
 /**
  * Implements a {@link org.apache.jackrabbit.core.query.QueryHandler} using
@@ -535,6 +532,9 @@ public class SearchIndex extends AbstractQueryHandler {
         indexingConfig = createIndexingConfiguration(nsMappings);
         analyzer.setIndexingConfig(indexingConfig);
 
+        // initialize the Tika parser
+        parser = createParser();
+
         index = new MultiIndex(this, excludedIDs);
         if (index.numDocs() == 0) {
             Path rootPath;
@@ -751,7 +751,7 @@ public class SearchIndex extends AbstractQueryHandler {
     public void flush() throws RepositoryException {
         try {
             index.waitUntilIndexingQueueIsEmpty();
-            index.flush();
+            index.safeFlush();
             // flush may have pushed nodes into the indexing queue
             // -> wait again
             index.waitUntilIndexingQueueIsEmpty();
@@ -931,50 +931,51 @@ public class SearchIndex extends AbstractQueryHandler {
      *
      * @return the configured parser
      */
-    public synchronized Parser getParser() {
-        if (parser == null) {
-            URL url = null;
-            if (tikaConfigPath != null) {
-                File file = new File(tikaConfigPath);
-                if (file.exists()) {
-                    try {
-                        url = file.toURI().toURL();
-                    } catch (MalformedURLException e) {
-                        log.warn("Invalid Tika configuration path: " + file, e);
-                    }
-                } else {
-                    ClassLoader loader = SearchIndex.class.getClassLoader();
-                    url = loader.getResource(tikaConfigPath);
-                }
-            }
-            if (url == null) {
-                url = SearchIndex.class.getResource("tika-config.xml");
-            }
+    public Parser getParser() {
+        return parser;
+    }
 
-            TikaConfig config = null;
-            if (url != null) {
+    private Parser createParser() {
+        URL url = null;
+        if (tikaConfigPath != null) {
+            File file = new File(tikaConfigPath);
+            if (file.exists()) {
                 try {
-                    config = new TikaConfig(url);
-                } catch (Exception e) {
-                    log.warn("Tika configuration not available: " + url, e);
+                    url = file.toURI().toURL();
+                } catch (MalformedURLException e) {
+                    log.warn("Invalid Tika configuration path: " + file, e);
                 }
-            }
-            if (config == null) {
-                config = TikaConfig.getDefaultConfig();
-            }
-
-            if (forkJavaCommand == null) {
-                parser = new AutoDetectParser(config);
             } else {
-                ForkParser forkParser = new ForkParser(
-                        SearchIndex.class.getClassLoader(),
-                        new AutoDetectParser(config));
-                forkParser.setJavaCommand(forkJavaCommand);
-                forkParser.setPoolSize(extractorPoolSize);
-                parser = forkParser;
+                ClassLoader loader = SearchIndex.class.getClassLoader();
+                url = loader.getResource(tikaConfigPath);
             }
         }
-        return parser;
+        if (url == null) {
+            url = SearchIndex.class.getResource("tika-config.xml");
+        }
+
+        TikaConfig config = null;
+        if (url != null) {
+            try {
+                config = new TikaConfig(url);
+            } catch (Exception e) {
+                log.warn("Tika configuration not available: " + url, e);
+            }
+        }
+        if (config == null) {
+            config = TikaConfig.getDefaultConfig();
+        }
+
+        if (forkJavaCommand != null) {
+            ForkParser forkParser = new ForkParser(
+                    SearchIndex.class.getClassLoader(),
+                    new AutoDetectParser(config));
+            forkParser.setJavaCommand(forkJavaCommand);
+            forkParser.setPoolSize(extractorPoolSize);
+            return forkParser;
+        } else {
+            return new AutoDetectParser(config);
+        }
     }
 
     /**
@@ -1182,7 +1183,7 @@ public class SearchIndex extends AbstractQueryHandler {
             throws RepositoryException {
         NodeIndexer indexer = new NodeIndexer(
                 node, getContext().getItemStateManager(), nsMappings,
-                getContext().getExecutor(), getParser());
+                getContext().getExecutor(), parser);
         indexer.setSupportHighlighting(supportHighlighting);
         indexer.setIndexingConfiguration(indexingConfig);
         indexer.setIndexFormatVersion(indexFormatVersion);
@@ -1622,45 +1623,46 @@ public class SearchIndex extends AbstractQueryHandler {
      */
     protected void retrieveAggregateRoot(
             Set<NodeId> removedIds, Map<NodeId, NodeState> map) {
-        if (indexingConfig != null) {
-            AggregateRule[] aggregateRules = indexingConfig.getAggregateRules();
-            if (aggregateRules == null) {
-                return;
-            }
-            int found = 0;
-            long time = System.currentTimeMillis();
+        if(removedIds.isEmpty() || indexingConfig == null){
+            return;
+        }
+        AggregateRule[] aggregateRules = indexingConfig.getAggregateRules();
+        if (aggregateRules == null) {
+            return;
+        }
+        int found = 0;
+        long time = System.currentTimeMillis();
+        try {
+            CachingMultiIndexReader reader = index.getIndexReader();
             try {
-                CachingMultiIndexReader reader = index.getIndexReader();
+                Term aggregateIds =
+                    new Term(FieldNames.AGGREGATED_NODE_UUID, "");
+                TermDocs tDocs = reader.termDocs();
                 try {
-                    Term aggregateIds =
-                        new Term(FieldNames.AGGREGATED_NODE_UUID, "");
-                    TermDocs tDocs = reader.termDocs();
-                    try {
-                        ItemStateManager ism = getContext().getItemStateManager();
-                        for (NodeId id : removedIds) {
-                            aggregateIds =
-                                aggregateIds.createTerm(id.toString());
-                            tDocs.seek(aggregateIds);
-                            while (tDocs.next()) {
-                                Document doc = reader.document(
-                                        tDocs.doc(), FieldSelectors.UUID);
-                                NodeId nId = new NodeId(doc.get(FieldNames.UUID));
-                                map.put(nId, (NodeState) ism.getItemState(nId));
-                                found++;
-                            }
+                    ItemStateManager ism = getContext().getItemStateManager();
+                    for (NodeId id : removedIds) {
+                        aggregateIds =
+                            aggregateIds.createTerm(id.toString());
+                        tDocs.seek(aggregateIds);
+                        while (tDocs.next()) {
+                            Document doc = reader.document(
+                                    tDocs.doc(), FieldSelectors.UUID);
+                            NodeId nId = new NodeId(doc.get(FieldNames.UUID));
+                            map.put(nId, (NodeState) ism.getItemState(nId));
+                            found++;
                         }
-                    } finally {
-                        tDocs.close();
                     }
                 } finally {
-                    reader.release();
+                    tDocs.close();
                 }
-            } catch (Exception e) {
-                log.warn("Exception while retrieving aggregate roots", e);
+            } finally {
+                reader.release();
             }
-            time = System.currentTimeMillis() - time;
-            log.debug("Retrieved {} aggregate roots in {} ms.", found, time);
+        } catch (Exception e) {
+            log.warn("Exception while retrieving aggregate roots", e);
         }
+        time = System.currentTimeMillis() - time;
+        log.debug("Retrieved {} aggregate roots in {} ms.", found, time);
     }
 
     //----------------------------< internal >----------------------------------

@@ -16,16 +16,26 @@
  */
 package org.apache.jackrabbit.api.security.user;
 
-import javax.jcr.RepositoryException;
-import javax.jcr.UnsupportedRepositoryOperationException;
 import java.security.Principal;
 import java.util.Iterator;
 
+import javax.jcr.RepositoryException;
+import javax.jcr.Session;
+import javax.jcr.UnsupportedRepositoryOperationException;
+
 /**
  * The <code>UserManager</code> provides access to and means to maintain
- * {@link Authorizable authoriable objects} i.e. {@link User users} and
+ * {@link Authorizable authorizable objects} i.e. {@link User users} and
  * {@link Group groups}. The <code>UserManager</code> is bound to a particular
  * <code>Session</code>.
+ * <p>
+ * Note that all <code>create</code> calls will modify the session associated
+ * with the {@linkplain UserManager} (whether this is the current session or not
+ * depends on the repository configuration). If the user manager is <em>not</em>
+ * in "autosave" mode (see {@link UserManager#isAutoSave()}), problems like
+ * overlapping creation of intermediate nodes may only surface upon a subsequent
+ * {@link Session#save()} operation; callers should be prepared to repeat them
+ * in case this happens.
  */
 public interface UserManager {
 
@@ -65,6 +75,19 @@ public interface UserManager {
      * @throws RepositoryException If an error occurs.
      */
     Authorizable getAuthorizable(Principal principal) throws RepositoryException;
+
+    /**
+     * In accordance to {@link org.apache.jackrabbit.api.security.user.Authorizable#getPath()}
+     * this method allows to retrieve an given authorizable by it's path.
+     *
+     * @param path The path to an authorizable.
+     * @return Authorizable or <code>null</code>, if not present.
+     * @throws UnsupportedRepositoryOperationException If this implementation does
+     * support to retrieve authorizables by path.
+     * @throws RepositoryException If another error occurs.
+     * @see org.apache.jackrabbit.api.security.user.Authorizable#getPath()
+     */
+    Authorizable getAuthorizableByPath(String path) throws UnsupportedRepositoryOperationException, RepositoryException;
 
     /**
      * Returns all <code>Authorizable</code>s that have a

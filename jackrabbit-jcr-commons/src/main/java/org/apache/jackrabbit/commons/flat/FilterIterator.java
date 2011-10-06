@@ -24,53 +24,18 @@ import java.util.NoSuchElementException;
 /**
  * Iterator filtering out items which do not match a given predicate.
  * @param <T>
+ * @deprecated use {@link org.apache.jackrabbit.commons.iterator.FilterIterator}
  */
-public class FilterIterator<T> implements Iterator<T> {
-    private final Iterator<T> iterator;
-    private final Predicate predicate;
-
-    private T next = null;
+public class FilterIterator<T> extends org.apache.jackrabbit.commons.iterator.FilterIterator<T> {
 
     /**
      * Create a new filtered iterator based on the given <code>iterator</code>.
      *
      * @param iterator  iterator to filter
-     * @param predicate  only item matching this predicate are included
+     * @param predicate only item matching this predicate are included
      */
-    public FilterIterator(Iterator<T> iterator, Predicate predicate) {
-        super();
-        this.iterator = iterator;
-        this.predicate = predicate;
-    }
-
-    public boolean hasNext() {
-        while (next == null && iterator.hasNext()) {
-            T e = iterator.next();
-            if (predicate.evaluate(e)) {
-                next = e;
-            }
-        }
-
-        return next != null;
-    }
-
-    public T next() {
-        if (hasNext()) {
-            T e = next;
-            next = null;
-            return e;
-        }
-        else {
-            throw new NoSuchElementException();
-        }
-    }
-
-    /**
-     * @throws  UnsupportedOperationException always
-     * @see java.util.Iterator#remove()
-     */
-    public void remove() {
-        throw new UnsupportedOperationException();
+    public FilterIterator(Iterator<T> tIterator, Predicate predicate) {
+        super(tIterator, predicate);
     }
 
 }

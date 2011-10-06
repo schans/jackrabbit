@@ -178,9 +178,13 @@ public class SharedItemStateManager
     private ISMLocking ismLocking;
 
     /**
-     * Update event channel.
+     * Update event channel. By default this is a dummy channel that simply
+     * ignores all events (so we don't need to check for null all the time),
+     * but in clustered environments the
+     * {@link #setEventChannel(UpdateEventChannel)} method should be called
+     * during initialization to connect this SISM instance with the cluster.
      */
-    private UpdateEventChannel eventChannel;
+    private UpdateEventChannel eventChannel = new DummyUpdateEventChannel();
 
     private final NodeIdFactory nodeIdFactory;
 
@@ -557,15 +561,13 @@ public class SharedItemStateManager
 
             virtualNodeReferences = new ChangeLog[virtualProviders.length];
 
-            /* let listener know about change */
-            if (eventChannel != null) {
-                eventChannel.updateCreated(this);
-            }
+            // let listener know about change
+            eventChannel.updateCreated(this);
 
             try {
                 writeLock = acquireWriteLock(local);
             } finally {
-                if (writeLock == null && eventChannel != null) {
+                if (writeLock == null) {
                     eventChannel.updateCancelled(this);
                 }
             }
@@ -683,6 +685,16 @@ public class SharedItemStateManager
                     shared.deleted(state.getOverlayedState());
                 }
                 for (ItemState state : local.addedStates()) {
+                    if (state.isNode() && state.getStatus() != ItemState.STATUS_NEW) {
+                        // another node with same id had been created
+                        // in the meantime, probably caused by mid-air collision
+                        // of concurrent versioning operations (JCR-2272)
+                        String msg = state.getId()
+                                + " has been created externally  (status "
+                                + state.getStatus() + ")";
+                        log.debug(msg);
+                        throw new StaleItemStateException(msg);
+                    }
                     state.connect(createInstance(state));
                     shared.added(state.getOverlayedState());
                 }
@@ -716,10 +728,8 @@ public class SharedItemStateManager
                 /* create event states */
                 events.createEventStates(rootNodeId, local, SharedItemStateManager.this);
 
-                /* let listener know about change */
-                if (eventChannel != null) {
-                    eventChannel.updatePrepared(this);
-                }
+                // let listener know about change
+                eventChannel.updatePrepared(this);
 
                 if (VALIDATE_HIERARCHY) {
                     log.info("Validating change-set hierarchy");
@@ -789,13 +799,15 @@ public class SharedItemStateManager
 
                 /* dispatch the events */
                 events.dispatch();
-
-                /* let listener know about finished operation */
-                if (eventChannel != null) {
-                    String path = events.getSession().getUserID() + "@" + events.getCommonPath();
-                    eventChannel.updateCommitted(this, path);
-                }
             } finally {
+                // Let listener know about finished operation. This needs
+                // to happen in the finally block so that the cluster lock
+                // always gets released, even if a post-store() exception
+                // is thrown from the code above. See also JCR-2272.
+                String path = events.getSession().getUserID()
+                        + "@" + events.getCommonPath();
+                eventChannel.updateCommitted(this, path);
+
                 if (writeLock != null) {
                     // exception occurred before downgrading lock
                     writeLock.release();
@@ -812,10 +824,8 @@ public class SharedItemStateManager
          */
         public void cancel() {
             try {
-                /* let listener know about canceled operation */
-                if (eventChannel != null) {
-                    eventChannel.updateCancelled(this);
-                }
+                // let listener know about canceled operation
+                eventChannel.updateCancelled(this);
 
                 local.disconnect();
 
@@ -1056,9 +1066,10 @@ public class SharedItemStateManager
                         // may actually be deleted and then again added with the
                         // same UUID, i.e. the node is still referenceable.
                         if (refs.hasReferences() && !local.has(targetId)) {
-                            String msg = node.getNodeId()
-                                    + ": the node cannot be removed because it is still being referenced.";
-                            log.debug(msg);
+                            String msg =
+                                node.getNodeId() + " cannot be removed"
+                                + " because it is still being referenced";
+                            log.debug("{} from {}", msg, refs.getReferences());
                             throw new ReferentialIntegrityException(msg);
                         }
                     }
@@ -1312,7 +1323,7 @@ public class SharedItemStateManager
 
                 } else if (!parentId.equals(oldParentId)) {
 
-                    // This node has been moved, check whether the parent has been modified aswell
+                    // This node has been moved, check whether the parent has been modified as well
                     if (changeLog.has(parentId)) {
                         checkParent(changeLog, modifiedNodeState, parentId);
                     } else if (!isShareable(modifiedNodeState)) {
@@ -1324,7 +1335,7 @@ public class SharedItemStateManager
                     // The old parent must be modified or deleted
                     if (!changeLog.isModified(oldParentId) && !changeLog.deleted(oldParentId)) {
                         String message = "Node with id " + id
-                                + " has been move, but the original parent is not part of the changelog: "
+                                + " has been moved, but the original parent is not part of the changelog: "
                                 + oldParentId;
                         log.error(message);
                         throw new ItemStateException(message);
@@ -1391,7 +1402,7 @@ public class SharedItemStateManager
         // Check whether the the changelog contains an entry for the parent as well.
         NodeId parentId = childState.getParentId();
         if (!parentId.equals(expectedParent)) {
-            Set sharedSet = childState.getSharedSet();
+            Set<NodeId> sharedSet = childState.getSharedSet();
             if (sharedSet.contains(expectedParent)) {
                 return;
             }
@@ -1430,7 +1441,7 @@ public class SharedItemStateManager
      *             if an error occurs
      */
     private boolean isShareable(NodeState state) throws RepositoryException {
-        // shortcut: check some wellknown built-in types first
+        // shortcut: check some well-known built-in types first
         Name primary = state.getNodeTypeName();
         Set<Name> mixins = state.getMixinTypeNames();
         if (mixins.contains(NameConstants.MIX_SHAREABLE)) {

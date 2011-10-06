@@ -214,6 +214,7 @@ public interface RepositoryService {
      * the specified rights for the given item.
      * @throws javax.jcr.RepositoryException
      * @see javax.jcr.Session#checkPermission(String, String)
+     * @see javax.jcr.Session#hasPermission(String, String) 
      */
     public boolean isGranted(SessionInfo sessionInfo, ItemId itemId, String[] actions) throws RepositoryException;
 
@@ -267,22 +268,23 @@ public interface RepositoryService {
      * @see javax.jcr.Node#getBaseVersion()
      * @see javax.jcr.Node#getVersionHistory()
      * @see javax.jcr.version.Version#getContainingHistory()
+     * @deprecated Use {@link #getItemInfos(SessionInfo, NodeId)} 
      */
     public NodeInfo getNodeInfo(SessionInfo sessionInfo, NodeId nodeId) throws ItemNotFoundException, RepositoryException;
 
     /**
      * Method used to 'batch-read' from the persistent storage. It returns the
-     * <code>NodeInfo</code> for the given <code>NodeId</code> as the first
+     * <code>ItemInfo</code> for the given <code>ItemId</code> as the first
      * element in the <code>Iterator</code>. In addition the iterator may contain
      * arbitrary <code>ItemInfo</code>s.
      *
      * @param sessionInfo
-     * @param nodeId
+     * @param itemId
      * @return An <code>Iterator</code> of <code>ItemInfo</code>s containing
-     * at least a single element: the <code>NodeInfo</code> that represents
-     * the Node identified by the given <code>NodeId</code>. If the Iterator
-     * contains multiple elements, the first is expected to represent the Node
-     * identified by the given <code>NodeId</code>.
+     * at least a single element: the <code>ItemInfo</code> that represents
+     * the Item identified by the given <code>ItemId</code>. If the Iterator
+     * contains multiple elements, the first is expected to represent the Item
+     * identified by the given <code>ItemId</code>.
      * @throws javax.jcr.ItemNotFoundException
      * @throws javax.jcr.RepositoryException
      * @see javax.jcr.Session#getItem(String)
@@ -295,7 +297,7 @@ public interface RepositoryService {
      * @see javax.jcr.Node#getVersionHistory()
      * @see javax.jcr.version.Version#getContainingHistory()
      */
-    public Iterator<? extends ItemInfo> getItemInfos(SessionInfo sessionInfo, NodeId nodeId) throws ItemNotFoundException, RepositoryException;
+    public Iterator<? extends ItemInfo> getItemInfos(SessionInfo sessionInfo, ItemId itemId) throws ItemNotFoundException, RepositoryException;
 
     /**
      * Returns an Iterator of <code>ChildInfo</code>s present on the
@@ -326,7 +328,7 @@ public interface RepositoryService {
      * {@link javax.jcr.PropertyType#REFERENCE}.
      * @return An Iterator of {@link PropertyId Id}s of the properties that are
      * referencing the node identified by the given <code>nodeId</code> or an
-     * empty iterator if the node is not eferenceable or no references exist.
+     * empty iterator if the node is not referenceable or no references exist.
      * @throws ItemNotFoundException
      * @throws RepositoryException
      * @see PropertyInfo#getId()
@@ -346,6 +348,7 @@ public interface RepositoryService {
      * @throws javax.jcr.RepositoryException
      * @see javax.jcr.Session#getItem(String)
      * @see javax.jcr.Node#getProperty(String)
+     * @deprecated Use {@link #getItemInfos(SessionInfo, NodeId)}
      */
     public PropertyInfo getPropertyInfo(SessionInfo sessionInfo, PropertyId propertyId) throws ItemNotFoundException, RepositoryException;
 
@@ -392,7 +395,7 @@ public interface RepositoryService {
     //-------------------------------------------------------------< Import >---
     /**
      * Imports the data present in the given <code>InputStream</code> into the
-     * persistent layer. Note, that the implemenation is responsible for
+     * persistent layer. Note, that the implementation is responsible for
      * validating the data presented and for the integrity of the repository
      * upon completion.
      *
@@ -568,7 +571,7 @@ public interface RepositoryService {
 
     /**
      * Explicit refresh of an existing lock. Existing locks should be refreshed
-     * implicitely with all read and write methods listed here.
+     * implicitly with all read and write methods listed here.
      *
      * @param sessionInfo
      * @param nodeId
@@ -680,7 +683,7 @@ public interface RepositoryService {
      */
     public NodeId checkpoint(SessionInfo sessionInfo, NodeId nodeId, NodeId activityId)  throws UnsupportedRepositoryOperationException, RepositoryException;
     /**
-     * Remove the version inditified by the specified <code>versionId</code>.
+     * Remove the version identified by the specified <code>versionId</code>.
      *
      * @param sessionInfo
      * @param versionHistoryId <code>NodeId</code> identifying the version
@@ -707,7 +710,7 @@ public interface RepositoryService {
      * to be restored with the same identified as a node that would be
      * introduces by the restore. If the <code>removeExisting</code> is
      * <code>true</code> the restored node takes precedence and the
-     * existing node is removed. Otherwise the restore failes.
+     * existing node is removed. Otherwise the restore fails.
      * @throws javax.jcr.version.VersionException
      * @throws javax.jcr.PathNotFoundException
      * @throws javax.jcr.ItemExistsException
@@ -733,7 +736,7 @@ public interface RepositoryService {
      * to be restored with the same identified as any node that would be
      * introduces by the restore. If the <code>removeExisting</code> is
      * <code>true</code> the node to be restored takes precedence and the
-     * existing node is removed. Otherwise the restore failes.
+     * existing node is removed. Otherwise the restore fails.
      * @throws javax.jcr.ItemExistsException
      * @throws javax.jcr.UnsupportedRepositoryOperationException
      * @throws javax.jcr.version.VersionException
@@ -1004,8 +1007,7 @@ public interface RepositoryService {
      * @throws RepositoryException if an error occurs while creating the
      *                             Subscription.
      */
-    public Subscription createSubscription(SessionInfo sessionInfo,
-                                           EventFilter[] filters)
+    public Subscription createSubscription(SessionInfo sessionInfo, EventFilter[] filters)
             throws UnsupportedRepositoryOperationException, RepositoryException;
 
     /**
@@ -1039,8 +1041,7 @@ public interface RepositoryService {
      * @throws RepositoryException  if an error occurs while updating the event
      *                              filters.
      */
-    public void updateEventFilters(Subscription subscription,
-                                   EventFilter[] filters)
+    public void updateEventFilters(Subscription subscription, EventFilter[] filters)
             throws RepositoryException;
 
     /**
@@ -1066,8 +1067,7 @@ public interface RepositoryService {
      *                              waiting for events within the specified
      *                              <code>timeout</code>.
      */
-    public EventBundle[] getEvents(Subscription subscription,
-                                   long timeout)
+    public EventBundle[] getEvents(Subscription subscription, long timeout)
             throws RepositoryException, InterruptedException;
 
     /**
@@ -1088,9 +1088,7 @@ public interface RepositoryService {
      *                             if the underlying implementation does not
      *                             support event journaling.
      */
-    public EventBundle getEvents(SessionInfo sessionInfo,
-                                 EventFilter filter,
-                                 long after)
+    public EventBundle getEvents(SessionInfo sessionInfo, EventFilter filter, long after)
             throws RepositoryException, UnsupportedRepositoryOperationException;
 
     /**

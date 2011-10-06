@@ -117,7 +117,7 @@ public class ConnectionHelper {
         String legalChars = "ABCDEFGHIJKLMNOPQRSTUVWXZY0123456789_";
         legalChars += getExtraNameCharacters();
         String id = identifier.toUpperCase();
-        StringBuffer escaped = new StringBuffer();
+        StringBuilder escaped = new StringBuilder();
         for (int i = 0; i < id.length(); i++) {
             char c = id.charAt(i);
             if (legalChars.indexOf(c) == -1) {
@@ -136,7 +136,7 @@ public class ConnectionHelper {
      * @param escaped the escaped db identifier
      * @param c the character to replace
      */
-    protected void replaceCharacter(StringBuffer escaped, char c) {
+    protected void replaceCharacter(StringBuilder escaped, char c) {
         escaped.append("_x");
         String hex = Integer.toHexString(c);
         escaped.append("0000".toCharArray(), 0, 4 - hex.length());
@@ -280,8 +280,9 @@ public class ConnectionHelper {
                 stmt = con.createStatement();
                 stmt.execute(sql);
             } else {
-                stmt = con.prepareStatement(sql);
-                execute((PreparedStatement) stmt, params);
+                PreparedStatement p = con.prepareStatement(sql);
+                stmt = p;
+                execute(p, params);
             }
         } finally {
             closeResources(con, stmt, null);
@@ -296,7 +297,7 @@ public class ConnectionHelper {
      * @return the update count
      * @throws SQLException on error
      */
-    public final int update(final String sql, final Object[] params) throws SQLException {
+    public final int update(final String sql, final Object... params) throws SQLException {
         return new RetryManager<Integer>() {
 
             @Override
@@ -307,7 +308,7 @@ public class ConnectionHelper {
         }.doTry();
     }
 
-    int reallyUpdate(String sql, Object[] params) throws SQLException {
+    int reallyUpdate(String sql, Object... params) throws SQLException {
         Connection con = null;
         PreparedStatement stmt = null;
         try {
@@ -317,6 +318,19 @@ public class ConnectionHelper {
         } finally {
             closeResources(con, stmt, null);
         }
+    }
+
+    /**
+     * Executes a SQL query and returns the {@link ResultSet}. The
+     * returned {@link ResultSet} should be closed by clients.
+     *
+     * @param sql an SQL statement string
+     * @param params the parameters for the SQL statement
+     * @param returnGeneratedKeys whether generated keys should be returned
+     * @return a {@link ResultSet}
+     */
+    public final ResultSet query(String sql, Object... params) throws SQLException {
+        return exec(sql, params, false, 0);
     }
 
     /**
@@ -355,7 +369,11 @@ public class ConnectionHelper {
                 stmt = con.prepareStatement(sql);
             }
             stmt.setMaxRows(maxRows);
-            stmt.setFetchSize(10000);
+            int fetchSize = 10000;
+            if (0 < maxRows && maxRows < fetchSize) {
+                fetchSize = maxRows; // JCR-3090
+            }
+            stmt.setFetchSize(fetchSize);
             execute(stmt, params);
             if (returnGeneratedKeys) {
                 rs = stmt.getGeneratedKeys();

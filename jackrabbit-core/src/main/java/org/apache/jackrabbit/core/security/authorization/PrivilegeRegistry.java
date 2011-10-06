@@ -19,8 +19,9 @@ package org.apache.jackrabbit.core.security.authorization;
 import org.apache.commons.collections.map.ReferenceMap;
 import org.apache.jackrabbit.core.cluster.PrivilegeEventChannel;
 import org.apache.jackrabbit.core.cluster.PrivilegeEventListener;
+import org.apache.jackrabbit.spi.PrivilegeDefinition;
 import org.apache.jackrabbit.spi.commons.privilege.ParseException;
-import org.apache.jackrabbit.spi.commons.privilege.PrivilegeDefinition;
+import org.apache.jackrabbit.spi.commons.privilege.PrivilegeDefinitionImpl;
 import org.apache.jackrabbit.spi.commons.privilege.PrivilegeDefinitionReader;
 import org.apache.jackrabbit.spi.commons.privilege.PrivilegeDefinitionWriter;
 import org.apache.jackrabbit.core.NamespaceRegistryImpl;
@@ -74,6 +75,12 @@ public final class PrivilegeRegistry implements PrivilegeEventListener {
     public static final Name REP_WRITE_NAME = NAME_FACTORY.create(REP_WRITE);
 
     /**
+     * Jackrabbit specific privilege for privilege management.
+     */
+    public static final String REP_PRIVILEGE_MANAGEMENT = "{" + Name.NS_REP_URI + "}privilegeManagement";
+    public static final Name REP_PRIVILEGE_MANAGEMENT_NAME = NAME_FACTORY.create(REP_PRIVILEGE_MANAGEMENT);
+
+    /**
      * No privileges
      */
     public static final int NO_PRIVILEGE = 0;
@@ -90,7 +97,11 @@ public final class PrivilegeRegistry implements PrivilegeEventListener {
     private static final int LOCK_MNGMT = VERSION_MNGMT << 1;
     private static final int LIFECYCLE_MNGMT = LOCK_MNGMT << 1;
     private static final int RETENTION_MNGMT = LIFECYCLE_MNGMT << 1;
-
+    private static final int WORKSPACE_MNGMT = RETENTION_MNGMT << 1;
+    private static final int NODE_TYPE_DEF_MNGMT = WORKSPACE_MNGMT << 1;
+    private static final int NAMESPACE_MNGMT = NODE_TYPE_DEF_MNGMT << 1;
+    private static final int PRIVILEGE_MNGMT = NAMESPACE_MNGMT << 1;
+    
     private static final Map<Name, Integer> PRIVILEGE_NAMES = new HashMap<Name, Integer>();
     static {
         PRIVILEGE_NAMES.put(NameConstants.JCR_READ, READ);
@@ -105,6 +116,10 @@ public final class PrivilegeRegistry implements PrivilegeEventListener {
         PRIVILEGE_NAMES.put(NameConstants.JCR_LOCK_MANAGEMENT, LOCK_MNGMT);
         PRIVILEGE_NAMES.put(NameConstants.JCR_LIFECYCLE_MANAGEMENT, LIFECYCLE_MNGMT);
         PRIVILEGE_NAMES.put(NameConstants.JCR_RETENTION_MANAGEMENT, RETENTION_MNGMT);
+        PRIVILEGE_NAMES.put(NameConstants.JCR_WORKSPACE_MANAGEMENT, WORKSPACE_MNGMT);
+        PRIVILEGE_NAMES.put(NameConstants.JCR_NODE_TYPE_DEFINITION_MANAGEMENT, NODE_TYPE_DEF_MNGMT);
+        PRIVILEGE_NAMES.put(NameConstants.JCR_NAMESPACE_MANAGEMENT, NAMESPACE_MNGMT);
+        PRIVILEGE_NAMES.put(REP_PRIVILEGE_MANAGEMENT_NAME, PRIVILEGE_MNGMT);
     }
 
     /**
@@ -125,7 +140,7 @@ public final class PrivilegeRegistry implements PrivilegeEventListener {
 
     private final NameResolver resolver;
 
-    private PrivilegeBits nextBits = PrivilegeBits.getInstance(RETENTION_MNGMT).nextBits();
+    private PrivilegeBits nextBits = PrivilegeBits.getInstance(PRIVILEGE_MNGMT).nextBits();
 
     /**
      * Privilege event channel for clustering support.
@@ -411,6 +426,18 @@ public final class PrivilegeRegistry implements PrivilegeEventListener {
         if ((privs & VERSION_MNGMT) == VERSION_MNGMT) {
             perm |= Permission.VERSION_MNGMT;
         }
+        if ((privs & WORKSPACE_MNGMT) == WORKSPACE_MNGMT) {
+            perm |= Permission.WORKSPACE_MNGMT;
+        }
+        if ((privs & NODE_TYPE_DEF_MNGMT) == NODE_TYPE_DEF_MNGMT) {
+            perm |= Permission.NODE_TYPE_DEF_MNGMT;
+        }
+        if ((privs & NAMESPACE_MNGMT) == NAMESPACE_MNGMT) {
+            perm |= Permission.NAMESPACE_MNGMT;
+        }
+        if ((privs & PRIVILEGE_MNGMT) == PRIVILEGE_MNGMT) {
+            perm |= Permission.PRIVILEGE_MNGMT;
+        }
         return perm;
     }
 
@@ -436,7 +463,8 @@ public final class PrivilegeRegistry implements PrivilegeEventListener {
      * to constraint violations or if persisting the custom privilege fails.
      */
     void registerDefinition(Name privilegeName, boolean isAbstract, Set<Name> declaredAggregateNames) throws RepositoryException {
-        Map<Name, PrivilegeDefinition> stubs = Collections.singletonMap(privilegeName, new PrivilegeDefinition(privilegeName, isAbstract, declaredAggregateNames));
+        PrivilegeDefinition def = new PrivilegeDefinitionImpl(privilegeName, isAbstract, declaredAggregateNames);
+        Map<Name, PrivilegeDefinition> stubs = Collections.singletonMap(privilegeName, def);
         registerCustomDefinitions(stubs);
 
         // inform clustering about the new privilege.
@@ -526,6 +554,18 @@ public final class PrivilegeRegistry implements PrivilegeEventListener {
             }
             if ((bits & RETENTION_MNGMT) == RETENTION_MNGMT) {
                 names.add(NameConstants.JCR_RETENTION_MANAGEMENT);
+            }
+            if ((bits & WORKSPACE_MNGMT) == WORKSPACE_MNGMT) {
+                names.add(NameConstants.JCR_WORKSPACE_MANAGEMENT);
+            }
+            if ((bits & NODE_TYPE_DEF_MNGMT) == NODE_TYPE_DEF_MNGMT) {
+                names.add(NameConstants.JCR_NODE_TYPE_DEFINITION_MANAGEMENT);
+            }
+            if ((bits & NAMESPACE_MNGMT) == NAMESPACE_MNGMT) {
+                names.add(NameConstants.JCR_NAMESPACE_MANAGEMENT);
+            }
+            if ((bits & PRIVILEGE_MNGMT) == PRIVILEGE_MNGMT) {
+                names.add(REP_PRIVILEGE_MANAGEMENT_NAME);
             }
 
             // include matching custom privilege names
@@ -678,8 +718,12 @@ public final class PrivilegeRegistry implements PrivilegeEventListener {
         jcrAllAggregates.add(NameConstants.JCR_NODE_TYPE_MANAGEMENT);
         jcrAllAggregates.add(NameConstants.JCR_RETENTION_MANAGEMENT);
         jcrAllAggregates.add(NameConstants.JCR_LIFECYCLE_MANAGEMENT);
+        jcrAllAggregates.add(NameConstants.JCR_NODE_TYPE_DEFINITION_MANAGEMENT);
+        jcrAllAggregates.add(NameConstants.JCR_NAMESPACE_MANAGEMENT);
+        jcrAllAggregates.add(NameConstants.JCR_WORKSPACE_MANAGEMENT);
         jcrAllAggregates.add(NameConstants.JCR_WRITE);
         jcrAllAggregates.add(REP_WRITE_NAME);
+        jcrAllAggregates.add(REP_PRIVILEGE_MANAGEMENT_NAME);
 
         Definition jcrAll = new Definition(NameConstants.JCR_ALL, false, jcrAllAggregates, jcrAllBits);
         defs.put(jcrAll.getName(), jcrAll);
@@ -714,7 +758,7 @@ public final class PrivilegeRegistry implements PrivilegeEventListener {
             // - make sure the specified name defines a registered namespace
             namespaceRegistry.getPrefix(name.getNamespaceURI());
             // - and isn't one of the reserved namespaces
-            if (((NamespaceRegistryImpl) namespaceRegistry).isReservedURI(name.getNamespaceURI())) {
+            if (isReservedNamespaceURI(name.getNamespaceURI())) {
                 throw new RepositoryException("Failed to register custom privilege: Reserved namespace URI: " + name.getNamespaceURI());
             }
 
@@ -783,6 +827,17 @@ public final class PrivilegeRegistry implements PrivilegeEventListener {
         }
 
         return definitions;
+    }
+
+    private boolean isReservedNamespaceURI(String uri) {
+        if (namespaceRegistry instanceof NamespaceRegistryImpl) {
+            return ((NamespaceRegistryImpl) namespaceRegistry).isReservedURI(uri);
+        } else {
+            // hardcoded fallback
+            return Name.NS_REP_URI.equals(uri)
+                    || (uri.startsWith("http://www.w3.org"))
+                    || uri.startsWith("http://www.jcp.org");
+        }
     }
 
     /**
@@ -884,7 +939,7 @@ public final class PrivilegeRegistry implements PrivilegeEventListener {
      * privilege definition. It defines addition information that ease
      * the evaluation of privileges.
      */
-    private static class Definition extends PrivilegeDefinition {
+    private final static class Definition extends PrivilegeDefinitionImpl {
 
         private final PrivilegeBits bits;
         private final boolean isCustom;
@@ -941,7 +996,7 @@ public final class PrivilegeRegistry implements PrivilegeEventListener {
      * CustomPrivilegeStore used to read and write custom privilege definitions
      * from/to a file system resource.
      */
-    private class CustomPrivilegeStore {
+    private final class CustomPrivilegeStore {
 
         /**
          * File system resource used to persist custom privileges registered with

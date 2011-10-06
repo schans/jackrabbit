@@ -46,7 +46,7 @@ public class Jcr2spiRepositoryFactory implements RepositoryFactory {
     /**
      * This parameter determines the {@link RepositoryServiceFactory} to create the
      * {@link RepositoryService}. This is either an instance of <code>RepositoryServiceFactory
-     * </code> or a fully quallyfied class name of a <code>RepositoryServiceFactory</code>
+     * </code> or a fully qualified class name of a <code>RepositoryServiceFactory</code>
      * having a no argument constructor.
      */
     public static final String PARAM_REPOSITORY_SERVICE_FACTORY = "org.apache.jackrabbit.spi.RepositoryServiceFactory";
@@ -235,7 +235,7 @@ public class Jcr2spiRepositoryFactory implements RepositoryFactory {
             super();
             this.serviceFactory = serviceFactory;
             this.cacheBehaviour = getCacheBehaviour(parameters);
-            this.itemCacheSize = getItemChacheSize(parameters);
+            this.itemCacheSize = getItemCacheSize(parameters);
             this.pollTimeOut = getPollTimeout(parameters);
             this.parameters = parameters;
         }
@@ -295,21 +295,21 @@ public class Jcr2spiRepositoryFactory implements RepositoryFactory {
             }
         }
 
-        private static int getItemChacheSize(Map<?, ?> parameters) throws RepositoryException {
+        private static int getItemCacheSize(Map<?, ?> parameters) throws RepositoryException {
             Object paramItemCacheSize = parameters.get(PARAM_ITEM_CACHE_SIZE);
-            log.debug("Setting ItemChacheSize from {}", PARAM_ITEM_CACHE_SIZE);
+            log.debug("Setting ItemCacheSize from {}", PARAM_ITEM_CACHE_SIZE);
 
             if (paramItemCacheSize == null) {
                 log.debug("{} not set, defaulting to {}", PARAM_ITEM_CACHE_SIZE, DEFAULT_ITEM_CACHE_SIZE);
                 return DEFAULT_ITEM_CACHE_SIZE;
             }
             else if (paramItemCacheSize instanceof Integer) {
-                log.debug("Setting ItemChacheSize to {}", paramItemCacheSize);
+                log.debug("Setting ItemCacheSize to {}", paramItemCacheSize);
                 return (Integer) paramItemCacheSize;
             }
             else if (paramItemCacheSize instanceof String) {
                 try {
-                    log.debug("Setting ItemChacheSize to {}", paramItemCacheSize);
+                    log.debug("Setting ItemCacheSize to {}", paramItemCacheSize);
                     return Integer.parseInt((String) paramItemCacheSize);
                 }
                 catch (NumberFormatException e) {

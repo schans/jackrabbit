@@ -25,6 +25,7 @@ import java.util.Map;
 
 import javax.jcr.AccessDeniedException;
 import javax.jcr.Credentials;
+import javax.jcr.GuestCredentials;
 import javax.jcr.InvalidItemStateException;
 import javax.jcr.ItemExistsException;
 import javax.jcr.ItemNotFoundException;
@@ -276,6 +277,9 @@ public abstract class AbstractRepositoryService implements RepositoryService {
         if (credentials instanceof SimpleCredentials) {
             userId = ((SimpleCredentials) credentials).getUserID();
         }
+        else if (credentials instanceof GuestCredentials) {
+            userId = "anonymous";
+        }
 
         SessionInfoImpl s = new SessionInfoImpl();
         s.setUserID(userId);
@@ -473,7 +477,7 @@ public abstract class AbstractRepositoryService implements RepositoryService {
 
     /**
      * This default implementation first calls {@link #checkSessionInfo(SessionInfo)}
-     * with the <code>sessionInfo</code>, then returns the namepsace URI for the
+     * with the <code>sessionInfo</code>, then returns the namespace URI for the
      * given <code>prefix</code>.
      */
     public String getNamespaceURI(SessionInfo sessionInfo, String prefix)

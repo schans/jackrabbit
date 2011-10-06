@@ -25,6 +25,7 @@ import javax.jcr.RepositoryException;
 import javax.jcr.Value;
 import java.io.Writer;
 import java.io.IOException;
+import java.util.Collection;
 
 import org.apache.jackrabbit.JcrConstants;
 import org.apache.jackrabbit.commons.json.JsonUtil;
@@ -66,6 +67,25 @@ class JsonWriter {
      */
     void write(Node node, int maxLevels) throws RepositoryException, IOException {
         write(node, 0, maxLevels);
+    }
+
+    void write(Collection<Node> nodes, int maxLevels)
+            throws RepositoryException, IOException {
+        writer.write('{');
+        writeKey(writer, "nodes");
+        writer.write('{');
+        boolean first = true;
+        for (Node node : nodes) {
+            if (first) {
+                first = false;
+            } else {
+                writer.write(',');
+            }
+            writeKey(writer, node.getPath());
+            write(node, maxLevels);
+        }
+        writer.write('}');
+        writer.write('}');
     }
 
     private void write(Node node, int currentLevel, int maxLevels)

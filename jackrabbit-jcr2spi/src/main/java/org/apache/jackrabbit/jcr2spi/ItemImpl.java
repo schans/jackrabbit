@@ -322,7 +322,7 @@ public abstract class ItemImpl implements Item, ItemStateLifeCycleListener {
             /**
              * Nothing to do for
              * - Status#EXISTING : modifications reverted or saved
-             *   inform listeneres about an update (status was MODIFIED before)
+             *   inform listeners about an update (status was MODIFIED before)
              *   or a simple refresh without modification (status was INVALIDATED).
              */
             case Status.EXISTING:
@@ -335,7 +335,7 @@ public abstract class ItemImpl implements Item, ItemStateLifeCycleListener {
              * - Status#EXISTING_MODIFIED : transient modification
              * - Status#STALE_MODIFIED : external modifications while transient changes pending
              * - Status#STALE_DESTROYED : external modifications while transient changes pending
-             * - Status#MODIFIED : externaly modified -> marker for sessionISM states only
+             * - Status#MODIFIED : externally modified -> marker for sessionISM states only
              * - Status#EXISTING_REMOVED : transient removal
              */
             case Status.EXISTING_MODIFIED:
@@ -473,11 +473,28 @@ public abstract class ItemImpl implements Item, ItemStateLifeCycleListener {
      * <ul>
      * <li>{@link Repository#LEVEL_1_SUPPORTED}</li>
      * <li>{@link Repository#LEVEL_2_SUPPORTED}</li>
-     * <li>{@link Repository#OPTION_TRANSACTIONS_SUPPORTED}</li>
-     * <li>{@link Repository#OPTION_VERSIONING_SUPPORTED}</li>
-     * <li>{@link Repository#OPTION_OBSERVATION_SUPPORTED}</li>
+     * <li>{@link Repository#OPTION_ACCESS_CONTROL_SUPPORTED}</li>
+     * <li>{@link Repository#OPTION_ACTIVITIES_SUPPORTED}</li>
+     * <li>{@link Repository#OPTION_BASELINES_SUPPORTED}</li>
+     * <li>{@link Repository#OPTION_JOURNALED_OBSERVATION_SUPPORTED}</li>
+     * <li>{@link Repository#OPTION_LIFECYCLE_SUPPORTED}</li>
      * <li>{@link Repository#OPTION_LOCKING_SUPPORTED}</li>
+     * <li>{@link Repository#OPTION_NODE_AND_PROPERTY_WITH_SAME_NAME_SUPPORTED}</li>
+     * <li>{@link Repository#OPTION_NODE_TYPE_MANAGEMENT_SUPPORTED}</li>
+     * <li>{@link Repository#OPTION_OBSERVATION_SUPPORTED}</li>
      * <li>{@link Repository#OPTION_QUERY_SQL_SUPPORTED}</li>
+     * <li>{@link Repository#OPTION_RETENTION_SUPPORTED}</li>
+     * <li>{@link Repository#OPTION_SHAREABLE_NODES_SUPPORTED}</li>
+     * <li>{@link Repository#OPTION_SIMPLE_VERSIONING_SUPPORTED}</li>
+     * <li>{@link Repository#OPTION_TRANSACTIONS_SUPPORTED}</li>
+     * <li>{@link Repository#OPTION_UNFILED_CONTENT_SUPPORTED}</li>
+     * <li>{@link Repository#OPTION_UPDATE_MIXIN_NODE_TYPES_SUPPORTED}</li>
+     * <li>{@link Repository#OPTION_UPDATE_PRIMARY_NODE_TYPE_SUPPORTED}</li>
+     * <li>{@link Repository#OPTION_VERSIONING_SUPPORTED}</li>
+     * <li>{@link Repository#OPTION_WORKSPACE_MANAGEMENT_SUPPORTED}</li>
+     * <li>{@link Repository#OPTION_XML_EXPORT_SUPPORTED}</li>
+     * <li>{@link Repository#OPTION_XML_IMPORT_SUPPORTED}</li>
+     * <li>{@link Repository#WRITE_SUPPORTED}</li>
      * </ul>
      * @throws UnsupportedRepositoryOperationException
      * @throws RepositoryException

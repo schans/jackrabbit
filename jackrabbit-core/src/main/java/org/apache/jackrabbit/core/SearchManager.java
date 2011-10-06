@@ -24,8 +24,6 @@ import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
-import java.util.concurrent.Executor;
-
 import javax.jcr.NamespaceException;
 import javax.jcr.Node;
 import javax.jcr.RepositoryException;
@@ -38,7 +36,6 @@ import javax.jcr.query.qom.QueryObjectModel;
 import org.apache.jackrabbit.core.config.SearchConfig;
 import org.apache.jackrabbit.core.fs.FileSystem;
 import org.apache.jackrabbit.core.id.NodeId;
-import org.apache.jackrabbit.core.nodetype.NodeTypeRegistry;
 import org.apache.jackrabbit.core.observation.EventImpl;
 import org.apache.jackrabbit.core.observation.SynchronousEventListener;
 import org.apache.jackrabbit.core.persistence.PersistenceManager;
@@ -130,12 +127,11 @@ public class SearchManager implements SynchronousEventListener {
     public SearchManager(
             RepositoryContext repositoryContext,
             QueryHandlerFactory qhf,
-                         SharedItemStateManager itemMgr,
-                         PersistenceManager pm,
-                         NodeId rootNodeId,
-                         SearchManager parentMgr,
-                         NodeId excludedNodeId,
-                         Executor executor) throws RepositoryException {
+            SharedItemStateManager itemMgr,
+            PersistenceManager pm,
+            NodeId rootNodeId,
+            SearchManager parentMgr,
+            NodeId excludedNodeId) throws RepositoryException {
         this.nsReg = repositoryContext.getNamespaceRegistry();
         this.itemMgr = itemMgr;
         this.parentHandler = (parentMgr != null) ? parentMgr.handler : null;
@@ -174,7 +170,7 @@ public class SearchManager implements SynchronousEventListener {
         this.handler = qhf.getQueryHandler(new QueryHandlerContext(
                 repositoryContext,
                 itemMgr, pm, rootNodeId,
-                parentHandler, excludedNodeId, executor));
+                parentHandler, excludedNodeId));
     }
 
     /**

@@ -36,6 +36,10 @@ class ConstraintSplitInfo {
 
     private boolean isMultiple;
 
+    private boolean hasLeftConstraints;
+
+    private boolean hasRightConstraints;
+
     private ConstraintSplitInfo leftInnerConstraints = null;
 
     private ConstraintSplitInfo rightInnerConstraints = null;
@@ -49,27 +53,31 @@ class ConstraintSplitInfo {
             List<Constraint> leftConstraints, List<Constraint> rightConstraints) {
         this.factory = factory;
         this.source = source;
-        this.isMultiple = false;
         this.leftConstraints = leftConstraints;
         this.rightConstraints = rightConstraints;
+        this.isMultiple = false;
+        this.hasLeftConstraints = false;
+        this.hasRightConstraints = false;
     }
 
     public void addLeftConstraint(Constraint c) {
         if (isMultiple) {
             leftInnerConstraints.addLeftConstraint(c);
-            leftInnerConstraints.addRightConstraint(c);
+            rightInnerConstraints.addLeftConstraint(c);
             return;
         }
         leftConstraints.add(c);
+        this.hasLeftConstraints = true;
     }
 
     public void addRightConstraint(Constraint c) {
         if (isMultiple) {
-            rightInnerConstraints.addLeftConstraint(c);
+            leftInnerConstraints.addRightConstraint(c);
             rightInnerConstraints.addRightConstraint(c);
             return;
         }
         rightConstraints.add(c);
+        this.hasRightConstraints = true;
     }
 
     public void splitOr() {
@@ -83,15 +91,21 @@ class ConstraintSplitInfo {
         ConstraintSplitInfo csi1 = new ConstraintSplitInfo(factory, source,
                 new ArrayList<Constraint>(leftConstraints),
                 new ArrayList<Constraint>(rightConstraints));
+        csi1.hasLeftConstraints = this.hasLeftConstraints;
+        csi1.hasRightConstraints = this.hasRightConstraints;
         this.leftInnerConstraints = csi1;
 
         ConstraintSplitInfo csi2 = new ConstraintSplitInfo(factory, source,
                 new ArrayList<Constraint>(leftConstraints),
                 new ArrayList<Constraint>(rightConstraints));
+        csi2.hasLeftConstraints = this.hasLeftConstraints;
+        csi2.hasRightConstraints = this.hasRightConstraints;
         this.rightInnerConstraints = csi2;
 
         this.leftConstraints.clear();
         this.rightConstraints.clear();
+        this.hasLeftConstraints = false;
+        this.hasRightConstraints = false;
     }
 
     public boolean isMultiple() {
@@ -124,6 +138,14 @@ class ConstraintSplitInfo {
         return Constraints.and(factory, rightConstraints);
     }
 
+    public boolean isHasLeftConstraints() {
+        return hasLeftConstraints;
+    }
+
+    public boolean isHasRightConstraints() {
+        return hasRightConstraints;
+    }
+
     @Override
     public String toString() {
         if (isMultiple) {
@@ -133,7 +155,8 @@ class ConstraintSplitInfo {
         }
         return "ConstraintSplitInfo [single" + ", leftConstraints="
                 + leftConstraints + ", rightConstraints=" + rightConstraints
-                + "]";
+                + ", hasLeftConstraints=" + hasLeftConstraints
+                + ", hasRightConstraints=" + hasRightConstraints + "]";
     }
 
 }

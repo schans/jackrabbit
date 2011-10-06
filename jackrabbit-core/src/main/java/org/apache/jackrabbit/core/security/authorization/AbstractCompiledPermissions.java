@@ -20,9 +20,7 @@ import org.apache.commons.collections.map.LRUMap;
 import org.apache.jackrabbit.spi.Path;
 
 import javax.jcr.RepositoryException;
-import javax.jcr.security.AccessControlException;
 import javax.jcr.security.Privilege;
-import java.util.Collection;
 import java.util.Map;
 import java.util.Set;
 
@@ -51,7 +49,11 @@ public abstract class AbstractCompiledPermissions implements CompiledPermissions
         synchronized (monitor) {
             result = cache.get(absPath);
             if (result == null) {
-                result = buildResult(absPath);
+                if (absPath == null) {
+                    result = buildRepositoryResult();
+                } else {
+                    result = buildResult(absPath);
+                }
                 cache.put(absPath, result);
             }
         }
@@ -59,7 +61,8 @@ public abstract class AbstractCompiledPermissions implements CompiledPermissions
     }
 
     /**
-     *
+     * Retrieve the result for the specified path.
+     * 
      * @param absPath Absolute path to build the result for.
      * @return Result for the specified <code>absPath</code>.
      * @throws RepositoryException If an error occurs.
@@ -67,8 +70,19 @@ public abstract class AbstractCompiledPermissions implements CompiledPermissions
     protected abstract Result buildResult(Path absPath) throws RepositoryException;
 
     /**
+     * Retrieve the result for repository level operations.
+     *
+     * @return The result instance for those permissions and privileges granted
+     * for repository level operations.
+     * @throws RepositoryException
+     */
+    protected abstract Result buildRepositoryResult() throws RepositoryException;
+
+    /**
+     * Retrieve the privilege manager.
      * 
-     * @return
+     * @return An instance of privilege manager.
+     * @throws javax.jcr.RepositoryException If an error occurs.
      */
     protected abstract PrivilegeManagerImpl getPrivilegeManagerImpl() throws RepositoryException;
 
@@ -136,7 +150,6 @@ public abstract class AbstractCompiledPermissions implements CompiledPermissions
     public static class Result {
 
         public static final Result EMPTY = new Result(Permission.NONE, Permission.NONE, PrivilegeBits.EMPTY, PrivilegeBits.EMPTY);
-
         private final int allows;
         private final int denies;
         private final PrivilegeBits allowPrivileges;

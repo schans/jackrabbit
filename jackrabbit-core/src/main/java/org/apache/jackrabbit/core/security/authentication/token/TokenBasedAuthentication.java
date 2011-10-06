@@ -23,6 +23,7 @@ import org.apache.jackrabbit.core.NodeImpl;
 import org.apache.jackrabbit.core.SessionImpl;
 import org.apache.jackrabbit.core.id.NodeId;
 import org.apache.jackrabbit.core.id.NodeIdFactory;
+import org.apache.jackrabbit.core.security.SecurityConstants;
 import org.apache.jackrabbit.core.security.authentication.Authentication;
 import org.apache.jackrabbit.spi.Name;
 import org.apache.jackrabbit.util.ISO8601;
@@ -30,7 +31,6 @@ import org.apache.jackrabbit.util.Text;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-import javax.jcr.AccessDeniedException;
 import javax.jcr.Credentials;
 import javax.jcr.Node;
 import javax.jcr.Property;
@@ -38,7 +38,10 @@ import javax.jcr.PropertyIterator;
 import javax.jcr.RepositoryException;
 import javax.jcr.Session;
 import javax.jcr.SimpleCredentials;
+import java.io.UnsupportedEncodingException;
+import java.security.NoSuchAlgorithmException;
 import java.security.Principal;
+import java.security.SecureRandom;
 import java.util.Arrays;
 import java.util.Calendar;
 import java.util.Collection;
@@ -70,9 +73,11 @@ public class TokenBasedAuthentication implements Authentication {
     public static final String TOKEN_ATTRIBUTE = ".token";
 
     private static final String TOKEN_ATTRIBUTE_EXPIRY = TOKEN_ATTRIBUTE + ".exp";
+    private static final String TOKEN_ATTRIBUTE_KEY = TOKEN_ATTRIBUTE + ".key";
     private static final String TOKENS_NODE_NAME = ".tokens";
     private static final String TOKENS_NT_NAME = "nt:unstructured"; // TODO: configurable
 
+    private static final char DELIM = '_';
 
     private final String token;
     private final long tokenExpiration;
@@ -81,23 +86,27 @@ public class TokenBasedAuthentication implements Authentication {
     private final Map<String, String> attributes;
     private final Map<String, String> info;
     private final long expiry;
+    private final String key;
 
     public TokenBasedAuthentication(String token, long tokenExpiration, Session session) throws RepositoryException {
         this.session = session;
         this.tokenExpiration = tokenExpiration;
         this.token = token;
         long expTime = Long.MAX_VALUE;
+        String keyV = null;
         if (token != null) {
             attributes = new HashMap<String, String>();
             info = new HashMap<String, String>();
 
-            Node n = session.getNodeByIdentifier(token);
+            Node n = getTokenNode(token, session);
             PropertyIterator it = n.getProperties();
             while (it.hasNext()) {
                 Property p = it.nextProperty();
                 String name = p.getName();
                 if (TOKEN_ATTRIBUTE_EXPIRY.equals(name)) {
                     expTime = p.getLong();
+                } else if (TOKEN_ATTRIBUTE_KEY.equals(name)) {
+                    keyV = p.getString();
                 } else if (isMandatoryAttribute(name)) {
                     attributes.put(name, p.getString());
                 } else if (isInfoAttribute(name)) {
@@ -109,6 +118,7 @@ public class TokenBasedAuthentication implements Authentication {
             info = Collections.emptyMap();
         }
         expiry = expTime;
+        key = keyV;
     }
 
     /**
@@ -138,6 +148,12 @@ public class TokenBasedAuthentication implements Authentication {
                 removeToken();
                 return false;
             }
+
+            // test for matching key
+            if (key != null && !key.equals(getDigestedKey(tokenCredentials))) {
+                return false;
+            }
+
             // check if all other required attributes match
             for (String name : attributes.keySet()) {
                 if (!attributes.get(name).equals(tokenCredentials.getAttribute(name))) {
@@ -154,20 +170,9 @@ public class TokenBasedAuthentication implements Authentication {
                     tokenCredentials.setAttribute(key, info.get(key));
                 }
             }
-            // collect those attributes present on the credentials that
-            // are missing or different in the token node.
-            Map<String, String> newAttributes = new HashMap<String,String>(attrNames.size());
-            for (String attrName : tokenCredentials.getAttributeNames()) {
-                String attrValue = tokenCredentials.getAttribute(attrName);
-                if (!isMandatoryAttribute(attrName) &&
-                        (!info.containsKey(attrName) || !info.get(attrName).equals(attrValue))) {
-                    newAttributes.put(attrName, attrValue);
-                }
-            }
 
-            // update token node if required: optionally resetting the
-            // expiration and the set of informative properties
-            updateTokenNode(expiry, loginTime, newAttributes);
+            // update token node if required: optionally resetting the expiration
+            updateTokenNode(expiry, loginTime);
 
             return true;
         }
@@ -181,42 +186,24 @@ public class TokenBasedAuthentication implements Authentication {
      * <ol>
      * <li>Reset the expiration if half of the expiration has passed in order to
      * minimize write operations (avoid resetting upon each login).</li>
-     * <li>Update the token node to reflect the set of new/changed informative
-     * attributes provided by the credentials.</li>
      * </ol>
      *
      * @param tokenExpiry
      * @param loginTime
-     * @param newAttributes
      */
-    private void updateTokenNode(long tokenExpiry, long loginTime, Map<String,String> newAttributes) {
-        Node tokenNode = null;
+    private void updateTokenNode(long tokenExpiry, long loginTime) {
+        Node tokenNode;
         Session s = null;
         try {
-            // a) expiry...
+            // expiry...
             if (tokenExpiry - loginTime <= tokenExpiration/2) {
                 long expirationTime = loginTime + tokenExpiration;
                 Calendar cal = GregorianCalendar.getInstance();
                 cal.setTimeInMillis(expirationTime);
 
-                tokenNode = getTokenNode();
-                s = tokenNode.getSession();
+                s = ((SessionImpl) session).createSession(session.getWorkspace().getName());
+                tokenNode = getTokenNode(token, s);
                 tokenNode.setProperty(TOKEN_ATTRIBUTE_EXPIRY, s.getValueFactory().createValue(cal));
-            }
-
-            // b) handle informative attributes...
-            if (!newAttributes.isEmpty()) {
-                if (tokenNode == null) {
-                    tokenNode = getTokenNode();
-                    s = tokenNode.getSession();
-                }
-                for (String attrName : newAttributes.keySet()) {
-                    tokenNode.setProperty(attrName, newAttributes.get(attrName));
-                    log.info("Updating token node with informative attribute '" + attrName + "'");
-                }
-            }
-
-            if (s != null) {
                 s.save();
             }
         } catch (RepositoryException e) {
@@ -234,8 +221,8 @@ public class TokenBasedAuthentication implements Authentication {
     private void removeToken() {
         Session s = null;
         try {
-            Node tokenNode = getTokenNode();
-            s = tokenNode.getSession();
+            s = ((SessionImpl) session).createSession(session.getWorkspace().getName());
+            Node tokenNode = getTokenNode(token, s);
             
             tokenNode.remove();
             s.save();
@@ -246,19 +233,6 @@ public class TokenBasedAuthentication implements Authentication {
                 s.logout();
             }
         }
-    }
-
-    /**
-     * Retrieve the token node using another session to avoid concurrent write
-     * operations with the shared system session.
-     *
-     * @return the token node
-     * @throws RepositoryException
-     * @throws AccessDeniedException
-     */
-    private Node getTokenNode() throws RepositoryException, AccessDeniedException {
-        Session s = ((SessionImpl) session).createSession(session.getWorkspace().getName());
-        return s.getNodeByIdentifier(token);
     }
 
     //--------------------------------------------------------------------------
@@ -331,7 +305,7 @@ public class TokenBasedAuthentication implements Authentication {
      * creating the token node.
      */
     public synchronized static Credentials createToken(User user, SimpleCredentials credentials,
-                                                long tokenExpiration, Session session) throws RepositoryException {
+                                                       long tokenExpiration, Session session) throws RepositoryException {
         String workspaceName = session.getWorkspace().getName();
         if (user == null) {
             throw new RepositoryException("Cannot create login token: No corresponding node for 'null' user in workspace '" + workspaceName + "'.");
@@ -358,6 +332,10 @@ public class TokenBasedAuthentication implements Authentication {
             Calendar cal = GregorianCalendar.getInstance();
             cal.setTimeInMillis(creationTime);
 
+            // generate key part of the login token
+            String key = generateKey(8);
+
+            // create the token node
             String tokenName = Text.replace(ISO8601.format(cal), ":", ".");
             Node tokenNode;
             // avoid usage of sequential nodeIDs
@@ -367,9 +345,15 @@ public class TokenBasedAuthentication implements Authentication {
                 tokenNode = ((NodeImpl) tokenParent).addNodeWithUuid(tokenName, NodeId.randomId().toString());
             }
 
-            String token = tokenNode.getIdentifier();
+            StringBuilder sb = new StringBuilder(tokenNode.getIdentifier());
+            sb.append(DELIM).append(key);
+
+            String token = sb.toString();
             tokenCredentials = new TokenCredentials(token);
             credentials.setAttribute(TOKEN_ATTRIBUTE, token);
+
+            // add key property
+            tokenNode.setProperty(TOKEN_ATTRIBUTE_KEY, getDigestedKey(key));
 
             // add expiration time property
             cal.setTimeInMillis(expirationTime);
@@ -387,6 +371,51 @@ public class TokenBasedAuthentication implements Authentication {
             return tokenCredentials;
         } else {
             throw new RepositoryException("Cannot create login token: No corresponding node for User " + user.getID() +" in workspace '" + workspaceName + "'.");
+        }
+    }
+
+    public static Node getTokenNode(TokenCredentials credentials, Session session) throws RepositoryException {
+        return getTokenNode(credentials.getToken(), session);
+    }
+
+    private static Node getTokenNode(String token, Session session) throws RepositoryException {
+        int pos = token.indexOf(DELIM);
+        String id = (pos == -1) ? token : token.substring(0, pos);
+        return session.getNodeByIdentifier(id);
+    }
+
+    private static String generateKey(int size) {
+        SecureRandom random = new SecureRandom();
+        byte key[] = new byte[size];
+        random.nextBytes(key);
+
+        StringBuffer res = new StringBuffer(key.length * 2);
+        for (byte b : key) {
+            res.append(Text.hexTable[(b >> 4) & 15]);
+            res.append(Text.hexTable[b & 15]);
+        }
+        return res.toString();
+    }
+
+    private static String getDigestedKey(TokenCredentials tc) throws RepositoryException {
+        String tk = tc.getToken();
+        int pos = tk.indexOf(DELIM);
+        if (pos > -1) {
+            return getDigestedKey(tk.substring(pos+1));
+        }     
+        return null;
+    }
+
+    private static String getDigestedKey(String key) throws RepositoryException {
+        try {
+            StringBuilder sb = new StringBuilder();
+            sb.append("{").append(SecurityConstants.DEFAULT_DIGEST).append("}");
+            sb.append(Text.digest(SecurityConstants.DEFAULT_DIGEST, key, "UTF-8"));
+            return sb.toString();
+        } catch (NoSuchAlgorithmException e) {
+            throw new RepositoryException("Failed to generate login token.");
+        } catch (UnsupportedEncodingException e) {
+            throw new RepositoryException("Failed to generate login token.");
         }
     }
 }

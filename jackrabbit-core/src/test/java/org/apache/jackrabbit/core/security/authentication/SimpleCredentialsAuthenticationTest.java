@@ -134,6 +134,9 @@ public class SimpleCredentialsAuthenticationTest extends AbstractJCRTest {
         public void changePassword(String password) throws RepositoryException {
         }
 
+        public void changePassword(String password, String oldPassword) throws RepositoryException {
+        }
+
         public void disable(String reason) throws RepositoryException {
         }
 
@@ -192,6 +195,10 @@ public class SimpleCredentialsAuthenticationTest extends AbstractJCRTest {
 
         public boolean removeProperty(String name) throws RepositoryException {
             return false;
+        }
+
+        public String getPath() {
+            return null;
         }
     }
 }

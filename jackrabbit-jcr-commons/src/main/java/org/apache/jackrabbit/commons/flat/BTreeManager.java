@@ -17,6 +17,7 @@
 package org.apache.jackrabbit.commons.flat;
 
 import org.apache.jackrabbit.JcrConstants;
+import org.apache.jackrabbit.commons.iterator.FilterIterator;
 import org.apache.jackrabbit.commons.predicate.Predicate;
 
 import javax.jcr.Item;
@@ -164,6 +165,7 @@ public class BTreeManager implements TreeManager {
      * @see org.apache.jackrabbit.commons.flat.TreeManager#split(org.apache.jackrabbit.commons.flat.ItemSequence,
      *      javax.jcr.Node, javax.jcr.Node)
      */
+    @SuppressWarnings("deprecation")
     public void split(ItemSequence itemSequence, Node node, Node cause) throws RepositoryException {
         SizedIterator<Node> childNodes = getNodes(node);
         int count = (int) childNodes.getSize();
@@ -183,6 +185,7 @@ public class BTreeManager implements TreeManager {
      * @see org.apache.jackrabbit.commons.flat.TreeManager#split(org.apache.jackrabbit.commons.flat.ItemSequence,
      *      javax.jcr.Node, javax.jcr.Property)
      */
+    @SuppressWarnings("deprecation")
     public void split(ItemSequence itemSequence, Node node, Property cause) throws RepositoryException {
         SizedIterator<Property> properties = getProperties(node);
         int count = (int) properties.getSize();
@@ -202,6 +205,7 @@ public class BTreeManager implements TreeManager {
      * @see org.apache.jackrabbit.commons.flat.TreeManager#join(org.apache.jackrabbit.commons.flat.ItemSequence,
      *      javax.jcr.Node, javax.jcr.Node)
      */
+    @SuppressWarnings("deprecation")
     public void join(ItemSequence itemSequence, Node node, Node cause) throws RepositoryException {
         SizedIterator<Node> nodes = getNodes(node);
         long count = nodes.getSize();
@@ -223,6 +227,7 @@ public class BTreeManager implements TreeManager {
      * @see org.apache.jackrabbit.commons.flat.TreeManager#join(org.apache.jackrabbit.commons.flat.ItemSequence,
      *      javax.jcr.Node, javax.jcr.Property)
      */
+    @SuppressWarnings("deprecation")
     public void join(ItemSequence itemSequence, Node node, Property cause) throws RepositoryException {
         SizedIterator<Property> properties = getProperties(node);
         long count = properties.getSize();
@@ -264,7 +269,7 @@ public class BTreeManager implements TreeManager {
     /**
      * Returns a {@link SizedIterator} of the child nodes of <code>node</code>.
      */
-    @SuppressWarnings("unchecked")
+    @SuppressWarnings({ "deprecation", "unchecked" })
     protected SizedIterator<Node> getNodes(Node node) throws RepositoryException {
         NodeIterator nodes = node.getNodes();
         return getSizedIterator(nodes, nodes.getSize());
@@ -274,6 +279,7 @@ public class BTreeManager implements TreeManager {
      * Returns a {@link SizedIterator} of the properties of <code>node</code>
      * which excludes the <code>jcr.primaryType</code> property.
      */
+    @SuppressWarnings({ "deprecation", "unchecked" })
     protected SizedIterator<Property> getProperties(Node node) throws RepositoryException {
         final PropertyIterator properties = node.getProperties();
 
@@ -317,6 +323,7 @@ public class BTreeManager implements TreeManager {
      * <code>size</code>. The value of the <code>size</code> parameter must
      * correctly reflect the number of items in <code>iterator</code>.
      */
+    @SuppressWarnings("deprecation")
     protected final <T> SizedIterator<T> getSizedIterator(final Iterator<T> iterator, final long size) {
         return new SizedIterator<T>() {
             public boolean hasNext() {

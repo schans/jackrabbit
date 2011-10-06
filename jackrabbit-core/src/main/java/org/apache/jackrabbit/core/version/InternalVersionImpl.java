@@ -77,7 +77,7 @@ class InternalVersionImpl extends InternalVersionItemImpl
      * @param node node state of this version
      * @param name name of this version
      */
-    public InternalVersionImpl(InternalVersionHistoryImpl vh, NodeStateEx node, Name name) {
+    public InternalVersionImpl(InternalVersionHistoryImpl vh, NodeStateEx node, Name name) throws RepositoryException{
         super(vh.getVersionManager(), node);
         this.versionHistory = vh;
         this.name = name;
@@ -121,7 +121,7 @@ class InternalVersionImpl extends InternalVersionItemImpl
         try {
             return (InternalFrozenNode) vMgr.getItem(getFrozenNodeId());
         } catch (RepositoryException e) {
-            throw new IllegalStateException("unable to retrieve frozen node: " + e);
+            throw new InconsistentVersioningState("unable to retrieve frozen node: " + e, e);
         }
     }
 
@@ -131,7 +131,7 @@ class InternalVersionImpl extends InternalVersionItemImpl
     public NodeId getFrozenNodeId() {
         ChildNodeEntry entry = node.getState().getChildNodeEntry(NameConstants.JCR_FROZENNODE, 1);
         if (entry == null) {
-            throw new InternalError("version has no frozen node: " + getId());
+            throw new InconsistentVersioningState("version has no frozen node: " + getId());
         }
         return entry.getId();
     }

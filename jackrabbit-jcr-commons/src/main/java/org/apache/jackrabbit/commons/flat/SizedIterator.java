@@ -16,20 +16,12 @@
  */
 package org.apache.jackrabbit.commons.flat;
 
-import java.util.Iterator;
-
 /**
- * <code>SizedIterator</code> extends {@link Iterator} with a
+ * <code>SizedIterator</code> extends {@link java.util.Iterator} with a
  * <code>getSize</code> method.
  *
  * @param <T> the type of elements of this iterator
+ * @deprecated use {@link org.apache.jackrabbit.commons.iterator.SizedIterator}
  */
-public interface SizedIterator<T> extends Iterator<T> {
-
-    /**
-     * The number of elements of this iterator or -1 if not known.
-     *
-     * @return number of elements.
-     */
-    long getSize();
+public interface SizedIterator<T> extends org.apache.jackrabbit.commons.iterator.SizedIterator<T> {
 }

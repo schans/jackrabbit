@@ -111,6 +111,7 @@ class InternalVersionHistoryImpl extends InternalVersionItemImpl
             throws RepositoryException {
         super(vMgr, node);
         init();
+        fixLegacy();
     }
 
     /**
@@ -160,8 +161,11 @@ class InternalVersionHistoryImpl extends InternalVersionItemImpl
             }
             nameCache.put(child.getName(), child.getId());
         }
+    }
 
-        // fix legacy
+
+    // fix legacy
+    private void fixLegacy() throws RepositoryException {
         if (rootVersion.getSuccessors().isEmpty()) {
             for (Name versionName : nameCache.keySet()) {
                 InternalVersionImpl v = createVersionInstance(versionName);
@@ -234,7 +238,7 @@ class InternalVersionHistoryImpl extends InternalVersionItemImpl
                     v = new InternalVersionImpl(this, child, child.getName());
                 }
             } catch (RepositoryException e) {
-                throw new InternalError("Version does not have a jcr:frozenNode: " + child.getNodeId());
+                throw new InconsistentVersioningState("Version does not have a jcr:frozenNode: " + child.getNodeId(), e);
             }
         }
         return v;

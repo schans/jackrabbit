@@ -20,6 +20,7 @@ import org.apache.jackrabbit.api.JackrabbitNode;
 import org.apache.jackrabbit.api.JackrabbitWorkspace;
 import org.apache.jackrabbit.api.security.JackrabbitAccessControlList;
 import org.apache.jackrabbit.api.security.user.Group;
+import org.apache.jackrabbit.core.UserTransactionImpl;
 import org.apache.jackrabbit.test.JUnitTest;
 import org.apache.jackrabbit.test.NotExecutableException;
 import org.apache.jackrabbit.test.api.observation.EventResult;
@@ -40,6 +41,7 @@ import javax.jcr.observation.ObservationManager;
 import javax.jcr.security.AccessControlManager;
 import javax.jcr.security.AccessControlPolicy;
 import javax.jcr.security.Privilege;
+import javax.transaction.UserTransaction;
 import java.util.HashMap;
 import java.util.List;
 import java.util.ArrayList;
@@ -59,9 +61,6 @@ public abstract class AbstractWriteTest extends AbstractEvaluationTest {
     protected String childPPath;
     protected String childchildPPath;
     protected String siblingPath;
-
-    // TODO: test AC for moved node
-    // TODO: test AC for moved AC-controlled node
 
     @Override
     protected void setUp() throws Exception {
@@ -1253,6 +1252,56 @@ public abstract class AbstractWriteTest extends AbstractEvaluationTest {
 
         assertFalse(testAcMgr.hasPrivileges(childNPath2, write));
         assertFalse(testSession.hasPermission(childNPath2, Session.ACTION_SET_PROPERTY));
+    }
+
+    /**
+     * Tests if it is possible to create/read nodes with a non-admin session
+     * within a transaction.
+     *
+     * @throws Exception
+     * @see <a href="https://issues.apache.org/jira/browse/JCR-2999">JCR-2999</a>
+     */
+    public void testTransaction() throws Exception {
+
+        // make sure testUser has all privileges
+        Privilege[] privileges = privilegesFromName(Privilege.JCR_ALL);
+        givePrivileges(path, privileges, getRestrictions(superuser, path));
+
+        // create new node and lock it
+        Session s = getTestSession();
+        UserTransaction utx = new UserTransactionImpl(s);
+        utx.begin();
+
+        // add node and save it
+        Node n = s.getNode(childNPath);
+        if (n.hasNode(nodeName1)) {
+            Node c = n.getNode(nodeName1);
+            c.remove();
+            s.save();
+        }
+
+        // create node and save
+        Node n2 = n.addNode(nodeName1);
+        s.save(); // -> node is NEW -> no failure
+
+        // create child node
+        Node n3 = n2.addNode(nodeName2);
+        s.save();  // -> used to fail because n2 was saved (EXISTING) but not committed.
+
+        n3.remove();
+        n2.remove();
+
+        // recreate n2 // -> another area where ItemManager#getItem is called in the ItemSaveOperation
+        n2 = n.addNode(nodeName1);
+        s.save();
+
+        // set a property on a child node of an uncommited parent
+        n2.setProperty(propertyName1, "testSetProperty");
+        s.save();  // -> used to fail because PropertyImpl#getParent called from PropertyImpl#checkSetValue
+                   //    was checking read permission on the not yet commited parent
+
+        // commit
+        utx.commit();
     }
 
     private static Node findPolicyNode(Node start) throws RepositoryException {

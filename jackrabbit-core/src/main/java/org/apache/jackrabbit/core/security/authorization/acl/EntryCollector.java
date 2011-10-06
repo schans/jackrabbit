@@ -19,6 +19,7 @@ package org.apache.jackrabbit.core.security.authorization.acl;
 import org.apache.jackrabbit.core.NodeImpl;
 import org.apache.jackrabbit.core.SessionImpl;
 import org.apache.jackrabbit.core.id.NodeId;
+import org.apache.jackrabbit.core.observation.SynchronousEventListener;
 import org.apache.jackrabbit.core.security.authorization.AccessControlConstants;
 import org.apache.jackrabbit.core.security.authorization.AccessControlModifications;
 import org.apache.jackrabbit.core.security.authorization.AccessControlObserver;
@@ -27,11 +28,13 @@ import org.apache.jackrabbit.util.Text;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import javax.jcr.ItemNotFoundException;
 import javax.jcr.Node;
 import javax.jcr.RepositoryException;
 import javax.jcr.Session;
 import javax.jcr.observation.Event;
 import javax.jcr.observation.EventIterator;
+import javax.jcr.observation.EventListener;
 import javax.jcr.observation.ObservationManager;
 import javax.jcr.security.AccessControlEntry;
 import java.util.ArrayList;
@@ -64,6 +67,8 @@ public class EntryCollector extends AccessControlObserver implements AccessContr
      */
     protected final NodeId rootID;
 
+    private final EventListener moveListener;
+
     /**
      *
      * @param systemSession
@@ -90,7 +95,14 @@ public class EntryCollector extends AccessControlObserver implements AccessContr
                 systemSession.getJCRName(NT_REP_ACL),
                 systemSession.getJCRName(NT_REP_ACE)
         };
-        observationMgr.addEventListener(this, events, systemSession.getRootNode().getPath(), true, null, ntNames, true);        
+        String rootPath = systemSession.getRootNode().getPath();
+        observationMgr.addEventListener(this, events, rootPath, true, null, ntNames, true);
+        /*
+         In addition both the collector and all subscribed listeners should be
+         informed about any kind of move events.
+         */
+        moveListener = new MoveListener();
+        observationMgr.addEventListener(moveListener, Event.NODE_MOVED, rootPath, true, null, null, true);
     }
 
     /**
@@ -101,7 +113,9 @@ public class EntryCollector extends AccessControlObserver implements AccessContr
     protected void close() {
         super.close();
         try {
-            systemSession.getWorkspace().getObservationManager().removeEventListener(this);
+            ObservationManager observationMgr = systemSession.getWorkspace().getObservationManager();
+            observationMgr.removeEventListener(this);
+            observationMgr.removeEventListener(moveListener);
         } catch (RepositoryException e) {
             log.error("Unexpected error while closing CachingEntryCollector", e);
         }
@@ -120,13 +134,25 @@ public class EntryCollector extends AccessControlObserver implements AccessContr
         LinkedList<AccessControlEntry> userAces = new LinkedList<AccessControlEntry>();
         LinkedList<AccessControlEntry> groupAces = new LinkedList<AccessControlEntry>();
 
-        NodeId next = node.getNodeId();
-        while (next != null) {
-            List<AccessControlEntry> entries = getEntries(next);
-            if (!entries.isEmpty() && filter != null) {
-                filter.filterEntries(entries, userAces, groupAces);
+        if (node == null) {
+            // repository level permissions
+            NodeImpl root = (NodeImpl) systemSession.getRootNode();
+            if (ACLProvider.isRepoAccessControlled(root)) {
+                NodeImpl aclNode = root.getNode(N_REPO_POLICY);
+                List<AccessControlEntry> entries = new ACLTemplate(aclNode).getEntries();
+                if (!entries.isEmpty() && filter != null) {
+                    filter.filterEntries(entries, userAces, groupAces);
+                }
             }
-            next = getParentId(next);
+        } else {
+            NodeId next = node.getNodeId();
+            while (next != null) {
+                List<AccessControlEntry> entries = getEntries(next);
+                if (!entries.isEmpty() && filter != null) {
+                    filter.filterEntries(entries, userAces, groupAces);
+                }
+                next = getParentId(next);
+            }
         }
         
         List<AccessControlEntry> entries = new ArrayList<AccessControlEntry>(userAces.size() + groupAces.size());
@@ -283,7 +309,7 @@ public class EntryCollector extends AccessControlObserver implements AccessContr
                     }
                 } catch (RepositoryException e) {
                     // should not get here
-                    log.error("Failed to process ACL event: " + event, e);
+                    log.warn("Failed to process ACL event: " + event, e);
                 }
             }
         }
@@ -299,21 +325,25 @@ public class EntryCollector extends AccessControlObserver implements AccessContr
         }
 
         private void siftNodeAdded(String identifier) throws RepositoryException {
-            NodeImpl n = (NodeImpl) session.getNodeByIdentifier(identifier);
-            if (n.isNodeType(EntryCollector.NT_REP_ACL)) {
-                // a new ACL was added -> use the added node to update
-                // the cache.
-                addModification(
-                        accessControlledIdFromAclNode(n),
-                        AccessControlObserver.POLICY_ADDED);
-            } else if (n.isNodeType(EntryCollector.NT_REP_ACE)) {
-                // a new ACE was added -> use the parent node (acl)
-                // to update the cache.
-                addModification(
-                        accessControlledIdFromAceNode(n),
-                        AccessControlObserver.POLICY_MODIFIED);
-            } /* else: some other node added below an access controlled
-               parent node -> not interested. */
+            try {
+                NodeImpl n = (NodeImpl) session.getNodeByIdentifier(identifier);
+                if (n.isNodeType(EntryCollector.NT_REP_ACL)) {
+                    // a new ACL was added -> use the added node to update
+                    // the cache.
+                    addModification(
+                            accessControlledIdFromAclNode(n),
+                            AccessControlObserver.POLICY_ADDED);
+                } else if (n.isNodeType(EntryCollector.NT_REP_ACE)) {
+                    // a new ACE was added -> use the parent node (acl)
+                    // to update the cache.
+                    addModification(
+                            accessControlledIdFromAceNode(n),
+                            AccessControlObserver.POLICY_MODIFIED);
+                } /* else: some other node added below an access controlled
+                     parent node -> not interested. */
+            } catch (ItemNotFoundException e) {
+                log.debug("Cannot process NODE_ADDED event. Node {} doesn't exist (anymore).", identifier);
+            }
         }
 
         private void siftNodeRemoved(String path) throws RepositoryException {
@@ -343,15 +373,19 @@ public class EntryCollector extends AccessControlObserver implements AccessContr
         }
 
         private void siftPropertyChanged(String identifier) throws RepositoryException {
-            // test if the changed prop belongs to an ACE
-            NodeImpl parent = (NodeImpl) session.getNodeByIdentifier(identifier);
-            if (parent.isNodeType(EntryCollector.NT_REP_ACE)) {
-                addModification(
-                        accessControlledIdFromAceNode(parent),
-                        AccessControlObserver.POLICY_MODIFIED);
-            } /* some other property below an access controlled node
+            try {
+                // test if the changed prop belongs to an ACE
+                NodeImpl parent = (NodeImpl) session.getNodeByIdentifier(identifier);
+                if (parent.isNodeType(EntryCollector.NT_REP_ACE)) {
+                    addModification(
+                            accessControlledIdFromAceNode(parent),
+                            AccessControlObserver.POLICY_MODIFIED);
+                } /* some other property below an access controlled node
                  changed -> not interested. (NOTE: rep:ACL doesn't
                  define any properties. */
+            } catch (ItemNotFoundException e) {
+                log.debug("Cannot process PROPERTY_CHANGED event. Node {} doesn't exist (anymore).", identifier);
+            }
         }
 
         private NodeId accessControlledIdFromAclNode(Node aclNode) throws RepositoryException {
@@ -368,6 +402,30 @@ public class EntryCollector extends AccessControlObserver implements AccessContr
                 modType |= modMap.get(accessControllNodeId);
             }
             modMap.put(accessControllNodeId, modType);
+        }
+    }
+
+    /**
+     * Listening to any kind of move events in the hierarchy. Since ac content
+     * is associated with individual nodes the caches need to be informed about
+     * any kind of move as well even if the target node is not access control
+     * content s.str.
+     */
+    private class MoveListener implements SynchronousEventListener {
+
+        public void onEvent(EventIterator events) {
+            // NOTE: simplified event handling as all listeners just clear
+            // the cache in case of any move event. therefore there is currently
+            // no need to process all events and using the rootID as marker.
+            while (events.hasNext()) {
+                Event event = events.nextEvent();
+                if (event.getType() == Event.NODE_MOVED) {
+                    Map<NodeId, Integer> m = Collections.singletonMap(rootID, AccessControlObserver.MOVE);
+                    AccessControlModifications<NodeId> mods = new AccessControlModifications<NodeId>(m);
+                    notifyListeners(mods);
+                    break;
+                } //else: illegal event-type: should never occur. ignore
+            }
         }
     }
 }

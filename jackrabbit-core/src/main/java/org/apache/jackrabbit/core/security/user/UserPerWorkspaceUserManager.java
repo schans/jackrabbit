@@ -16,8 +16,11 @@
  */
 package org.apache.jackrabbit.core.security.user;
 
+import org.apache.jackrabbit.api.security.user.Authorizable;
+import org.apache.jackrabbit.core.NodeImpl;
 import org.apache.jackrabbit.core.SessionImpl;
 
+import javax.jcr.Node;
 import javax.jcr.RepositoryException;
 import javax.jcr.Session;
 import javax.jcr.UnsupportedRepositoryOperationException;
@@ -77,6 +80,20 @@ public class UserPerWorkspaceUserManager extends UserManagerImpl {
 
     //--------------------------------------------------------< UserManager >---
     /**
+     * @see org.apache.jackrabbit.api.security.user.UserManager#getAuthorizableByPath(String)
+     */
+    @Override
+    public Authorizable getAuthorizableByPath(String path) throws UnsupportedRepositoryOperationException, RepositoryException {
+        SessionImpl session = getSession();
+        if (session.nodeExists(path)) {
+            NodeImpl n = (NodeImpl) session.getNode(path);
+            return getAuthorizable(n);
+        } else {
+            return null;
+        }
+    }
+
+    /**
      * @see org.apache.jackrabbit.api.security.user.UserManager#isAutoSave()
      */
     @Override
@@ -90,5 +107,17 @@ public class UserPerWorkspaceUserManager extends UserManagerImpl {
     @Override
     public void autoSave(boolean enable) throws UnsupportedRepositoryOperationException, RepositoryException {
         autoSave = enable;
+    }
+
+    //--------------------------------------------------------------------------
+    /**
+     * Returns the path of the specified authorizableNode.
+     *
+     * @param authorizableNode Node associated with an authorizable.
+     * @return The path of the node.
+     * @throws RepositoryException If an error occurs while retrieving the path.
+     */
+    String getPath(Node authorizableNode) throws RepositoryException {
+        return authorizableNode.getPath();
     }
 }

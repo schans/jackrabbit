@@ -48,6 +48,9 @@ public class TestAll extends TestCase {
         suite.addTestSuite(VersionTest.class);
         suite.addTestSuite(NodeTypeTest.class);
         suite.addTestSuite(EffectivePolicyTest.class);
+        suite.addTestSuite(ACLEditorTest.class);
+        suite.addTestSuite(RepositoryOperationTest.class);
+        suite.addTestSuite(MoveTest.class);
 
         return suite;
     }

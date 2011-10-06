@@ -26,7 +26,7 @@
   <parent>
     <groupId>org.apache.jackrabbit</groupId>
     <artifactId>jackrabbit-parent</artifactId>
-    <version>2.3-SNAPSHOT</version>
+    <version>2.3.1-SNAPSHOT</version>
     <relativePath>../jackrabbit-parent/pom.xml</relativePath>
   </parent>
   <artifactId>jackrabbit-jcr-commons</artifactId>
@@ -42,11 +42,41 @@
         <extensions>true</extensions>
         <configuration>
           <instructions>
-            <Export-Package>
-              org.apache.jackrabbit.*;version=${project.version}
-            </Export-Package>
+            <Main-Class>
+              org.apache.jackrabbit.util.Base64
+            </Main-Class>
+            <Import-Package>
+              *,
+              org.apache.jackrabbit.api.security.user;version="[2.2,3)";resolution:=optional
+            </Import-Package>
           </instructions>
         </configuration>
+      </plugin>
+      <plugin>
+        <groupId>org.codehaus.mojo</groupId>
+        <artifactId>clirr-maven-plugin</artifactId>
+        <executions>
+          <execution>
+            <phase>verify</phase>
+            <goals>
+              <goal>check</goal>
+            </goals>
+            <configuration>
+              <excludes>
+<exclude>org/apache/jackrabbit/commons/query/qom/JoinType</exclude>
+<exclude>org/apache/jackrabbit/commons/query/qom/Operator</exclude>
+<exclude>org/apache/jackrabbit/commons/query/qom/Order</exclude>
+              </excludes>
+              <comparisonArtifacts>
+                <comparisonArtifact>
+                  <groupId>${project.groupId}</groupId>
+                  <artifactId>${project.artifactId}</artifactId>
+                  <version>${clirr.baseline.version}</version>
+                </comparisonArtifact>
+              </comparisonArtifacts>
+            </configuration>
+          </execution>
+        </executions>
       </plugin>
     </plugins>
   </build>
@@ -55,6 +85,23 @@
     <dependency>
       <groupId>javax.jcr</groupId>
       <artifactId>jcr</artifactId>
+    </dependency>
+    <!--
+       optional dependency to jackrabbit api.
+       this is used for general API utilities that cover not only the
+       JCR API but also it's extensions in jackrabbit-api such as e.g.
+       user management or extended access control functionality.
+    -->
+    <dependency>
+      <groupId>org.apache.jackrabbit</groupId>
+      <artifactId>jackrabbit-api</artifactId>
+      <version>2.3.1-SNAPSHOT</version>
+      <optional>true</optional>
+    </dependency>
+    <dependency>
+      <groupId>biz.aQute</groupId>
+      <artifactId>bndlib</artifactId>
+      <scope>provided</scope>
     </dependency>
     <dependency>
       <groupId>junit</groupId>

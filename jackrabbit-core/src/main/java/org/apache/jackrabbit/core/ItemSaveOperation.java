@@ -259,7 +259,8 @@ class ItemSaveOperation implements SessionWriteOperation<Object> {
             // update operation succeeded
             succeeded = true;
         } catch (StaleItemStateException e) {
-            throw new InvalidItemStateException(e.getMessage());
+            throw new InvalidItemStateException(
+                    "Unable to update a stale item: " + this, e);
         } catch (ItemStateException e) {
             throw new RepositoryException(
                     "Unable to update item: " + this, e);
@@ -489,9 +490,18 @@ class ItemSaveOperation implements SessionWriteOperation<Object> {
                  * its primary type has changed, check its node type against the
                  * required node type in its definition
                  */
-                if (nodeState.getStatus() == ItemState.STATUS_NEW
-                        || !nodeState.getNodeTypeName().equals(
-                            ((NodeState) nodeState.getOverlayedState()).getNodeTypeName())) {
+                boolean primaryTypeChanged =
+                        nodeState.getStatus() == ItemState.STATUS_NEW;
+                if (!primaryTypeChanged) {
+                    NodeState overlaid =
+                            (NodeState) nodeState.getOverlayedState();
+                    if (overlaid != null) {
+                        Name newName = nodeState.getNodeTypeName();
+                        Name oldName = overlaid.getNodeTypeName();
+                        primaryTypeChanged = !newName.equals(oldName);
+                    }
+                }
+                if (primaryTypeChanged) {
                     for (NodeType ntReq : nodeDef.getRequiredPrimaryTypes()) {
                         Name ntName = ((NodeTypeImpl) ntReq).getQName();
                         if (!(pnt.getQName().equals(ntName)
@@ -775,7 +785,7 @@ class ItemSaveOperation implements SessionWriteOperation<Object> {
                         nodeState);
                 if (nt.includesNodeType(NameConstants.MIX_VERSIONABLE)) {
                     if (!nodeState.hasPropertyName(NameConstants.JCR_VERSIONHISTORY)) {
-                        NodeImpl node = (NodeImpl) itemMgr.getItem(itemState.getId());
+                        NodeImpl node = (NodeImpl) itemMgr.getItem(itemState.getId(), false);
                         InternalVersionManager vMgr = session.getInternalVersionManager();
                         /**
                          * check if there's already a version history for that
@@ -811,7 +821,7 @@ class ItemSaveOperation implements SessionWriteOperation<Object> {
                     vMgr.getVersionHistory(session, nodeState, null);
 
                     // create isCheckedOutProperty if not already exists
-                    NodeImpl node = (NodeImpl) itemMgr.getItem(itemState.getId());
+                    NodeImpl node = (NodeImpl) itemMgr.getItem(itemState.getId(), false);
                     if (!nodeState.hasPropertyName(NameConstants.JCR_ISCHECKEDOUT)) {
                         node.internalSetProperty(
                                 NameConstants.JCR_ISCHECKEDOUT,
@@ -832,7 +842,7 @@ class ItemSaveOperation implements SessionWriteOperation<Object> {
             throws RepositoryException {
         for (ItemState state : states) {
             // persist state of transient item
-            itemMgr.getItem(state.getId()).makePersistent();
+            itemMgr.getItem(state.getId(), false).makePersistent();
         }
     }
 
@@ -859,7 +869,7 @@ class ItemSaveOperation implements SessionWriteOperation<Object> {
                     itemState.setStatus(ItemState.STATUS_NEW);
                 } else {
                     try {
-                        item = itemMgr.getItem(id);
+                        item = itemMgr.getItem(id, false);
                     } catch (ItemNotFoundException infe) {
                         // itemState probably represents a 'new' item and the
                         // ItemImpl instance wrapping it has already been gc'ed;

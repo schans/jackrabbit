@@ -19,9 +19,9 @@ package org.apache.jackrabbit.core.security.authorization;
 import org.apache.jackrabbit.api.security.authorization.PrivilegeManager;
 import org.apache.jackrabbit.core.SessionImpl;
 import org.apache.jackrabbit.spi.Name;
+import org.apache.jackrabbit.spi.PrivilegeDefinition;
 import org.apache.jackrabbit.spi.commons.conversion.NameResolver;
 import org.apache.jackrabbit.spi.commons.name.NameConstants;
-import org.apache.jackrabbit.spi.commons.privilege.PrivilegeDefinition;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -133,7 +133,7 @@ public final class PrivilegeManagerImpl implements PrivilegeManager, PrivilegeRe
      * In case of a non aggregate privilege an empty array should be passed.
      * @return the new privilege.
      * @throws AccessDeniedException If the session this manager has been created
-     * for isn't the administrator.
+     * lacks rep:privilegeManagement privilege.
      * @throws RepositoryException If the privilege could not be registered due
      * to constraint violations or if persisting the custom privilege fails.
      * @see PrivilegeManager#registerPrivilege(String, boolean, String[])
@@ -141,9 +141,12 @@ public final class PrivilegeManagerImpl implements PrivilegeManager, PrivilegeRe
     public Privilege registerPrivilege(String privilegeName, boolean isAbstract,
                                        String[] declaredAggregateNames)
             throws AccessDeniedException, RepositoryException {
-        boolean isAdmin = (resolver instanceof SessionImpl) ? ((SessionImpl) resolver).isAdmin() : false;
-        if (!isAdmin) {
-            throw new AccessDeniedException("Registering privileges is only allowed to administrator.");
+        if (resolver instanceof SessionImpl) {
+            SessionImpl sImpl = (SessionImpl) resolver;
+            sImpl.getAccessManager().checkRepositoryPermission(Permission.PRIVILEGE_MNGMT);
+        } else {
+            // cannot evaluate
+            throw new AccessDeniedException("Registering privileges is not allowed for the editing session.");
         }
 
         Name name = resolver.getQName(privilegeName);

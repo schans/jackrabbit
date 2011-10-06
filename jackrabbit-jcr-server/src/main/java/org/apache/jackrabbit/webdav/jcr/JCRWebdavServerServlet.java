@@ -60,18 +60,11 @@ public abstract class JCRWebdavServerServlet extends AbstractWebdavServlet {
     public static final String INIT_PARAM_RESOURCE_PATH_PREFIX = "resource-path-prefix";
 
     /**
-     * Name of the optional init parameter that defines the value of the
-     * 'WWW-Authenticate' header.<p/>
-     * If the parameter is omitted the default value
-     * {@link #DEFAULT_AUTHENTICATE_HEADER "Basic Realm=Jackrabbit Webdav Server"}
-     * is used.
-     *
-     * @see #getAuthenticateHeaderValue()
+     * Optional 'concurrency-level' parameter defining the concurrency level
+     * within the jcr-server. If the parameter is omitted the internal default
+     * value (50) is used.
      */
-    public static final String INIT_PARAM_AUTHENTICATE_HEADER = "authenticate-header";
-
-    /** the 'missing-auth-mapping' init parameter */
-    public final static String INIT_PARAM_MISSING_AUTH_MAPPING = "missing-auth-mapping";
+    public final static String INIT_PARAM_CONCURRENCY_LEVEL = "concurrency-level";
 
     /**
      * Servlet context attribute used to store the path prefix instead of
@@ -81,7 +74,6 @@ public abstract class JCRWebdavServerServlet extends AbstractWebdavServlet {
     public static final String CTX_ATTR_RESOURCE_PATH_PREFIX = "jackrabbit.webdav.jcr.resourcepath";
 
     private String pathPrefix;
-    private String authenticate_header;
 
     private JCRWebdavServer server;
     private DavResourceFactory resourceFactory;
@@ -107,12 +99,6 @@ public abstract class JCRWebdavServerServlet extends AbstractWebdavServlet {
         getServletContext().setAttribute(CTX_ATTR_RESOURCE_PATH_PREFIX, pathPrefix);
         log.debug(INIT_PARAM_RESOURCE_PATH_PREFIX + " = " + pathPrefix);
 
-        authenticate_header = getInitParameter(INIT_PARAM_AUTHENTICATE_HEADER);
-        if (authenticate_header == null) {
-            authenticate_header = DEFAULT_AUTHENTICATE_HEADER;
-        }
-        log.debug(INIT_PARAM_AUTHENTICATE_HEADER + " = " + authenticate_header);
-
         txMgr = new TxLockManagerImpl();
         subscriptionMgr = new SubscriptionManagerImpl();
         txMgr.addTransactionListener((SubscriptionManagerImpl) subscriptionMgr);
@@ -127,7 +113,7 @@ public abstract class JCRWebdavServerServlet extends AbstractWebdavServlet {
      * {@link WebdavRequest#matchesIfHeader(DavResource) If header} and validation
      * of {@link org.apache.jackrabbit.webdav.transaction.TransactionConstants#HEADER_TRANSACTIONID
      * TransactionId header}. This method will also return false if the requested
-     * resource resides within a differenct workspace as is assigned to the repository
+     * resource resides within a different workspace as is assigned to the repository
      * session attached to the given request.
      *
      * @see AbstractWebdavServlet#isPreconditionValid(WebdavRequest, DavResource)
@@ -170,7 +156,17 @@ public abstract class JCRWebdavServerServlet extends AbstractWebdavServlet {
     public DavSessionProvider getDavSessionProvider() {
         if (server == null) {
             Repository repository = getRepository();
-            server = new JCRWebdavServer(repository, getSessionProvider());
+            String cl = getInitParameter(INIT_PARAM_CONCURRENCY_LEVEL);
+            if (cl != null) {
+                try {
+                    server = new JCRWebdavServer(repository, getSessionProvider(), Integer.parseInt(cl));
+                } catch (NumberFormatException e) {
+                    log.debug("Invalid value '" + cl+ "' for init-param 'concurrency-level'. Using default instead.");
+                    server = new JCRWebdavServer(repository, getSessionProvider());
+                }
+            } else {
+                server = new JCRWebdavServer(repository, getSessionProvider());
+            }
         }
         return server;
     }
@@ -232,25 +228,13 @@ public abstract class JCRWebdavServerServlet extends AbstractWebdavServlet {
     }
 
     /**
-     * Returns the init param of the servlet configuration or
-     * {@link #DEFAULT_AUTHENTICATE_HEADER} as default value.
-     *
-     * @return corresponding init parameter or {@link #DEFAULT_AUTHENTICATE_HEADER}.
-     * @see #INIT_PARAM_AUTHENTICATE_HEADER
-     */
-    @Override
-    public String getAuthenticateHeaderValue() {
-        return authenticate_header;
-    }
-
-    /**
      * Modified variant needed for JCR move and copy that isn't compliant to
      * WebDAV. The latter requires both methods to fail if the destination already
      * exists and Overwrite is set to F (false); in JCR however this depends on
      * the node type characteristics of the parent (SNSiblings allowed or not).
      *
      * @param destResource destination resource to be validated.
-     * @param request
+     * @param request The webdav request
      * @param checkHeader flag indicating if the destination header must be present.
      * @return status code indicating whether the destination is valid.
      */
@@ -299,6 +283,7 @@ public abstract class JCRWebdavServerServlet extends AbstractWebdavServlet {
     /**
      * Returns the configured path prefix
      *
+     * @param ctx The servlet context.
      * @return resourcePathPrefix
      * @see #INIT_PARAM_RESOURCE_PATH_PREFIX
      */
@@ -308,6 +293,8 @@ public abstract class JCRWebdavServerServlet extends AbstractWebdavServlet {
 
     /**
      * Returns the repository to be used by this servlet.
+     *
+     * @return the JCR repository to be used by this servlet
      */
     protected abstract Repository getRepository();
 

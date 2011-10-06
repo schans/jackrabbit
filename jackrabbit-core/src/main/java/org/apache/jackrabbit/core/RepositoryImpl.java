@@ -32,11 +32,7 @@ import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
 import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.ScheduledThreadPoolExecutor;
-import java.util.concurrent.ThreadFactory;
-import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import javax.jcr.AccessDeniedException;
 import javax.jcr.Credentials;
@@ -59,6 +55,7 @@ import org.apache.jackrabbit.api.JackrabbitRepository;
 import org.apache.jackrabbit.api.management.RepositoryManager;
 import org.apache.jackrabbit.api.security.authentication.token.TokenCredentials;
 import org.apache.jackrabbit.commons.AbstractRepository;
+import org.apache.jackrabbit.core.cache.CacheManager;
 import org.apache.jackrabbit.core.cluster.ClusterContext;
 import org.apache.jackrabbit.core.cluster.ClusterException;
 import org.apache.jackrabbit.core.cluster.ClusterNode;
@@ -81,8 +78,6 @@ import org.apache.jackrabbit.core.fs.FileSystemException;
 import org.apache.jackrabbit.core.fs.FileSystemResource;
 import org.apache.jackrabbit.core.id.NodeId;
 import org.apache.jackrabbit.core.id.NodeIdFactory;
-import org.apache.jackrabbit.core.jmx.JmxRegistry;
-import org.apache.jackrabbit.core.jmx.JmxRegistryImpl;
 import org.apache.jackrabbit.core.lock.LockManager;
 import org.apache.jackrabbit.core.lock.LockManagerImpl;
 import org.apache.jackrabbit.core.nodetype.NodeTypeRegistry;
@@ -98,10 +93,9 @@ import org.apache.jackrabbit.core.retention.RetentionRegistry;
 import org.apache.jackrabbit.core.retention.RetentionRegistryImpl;
 import org.apache.jackrabbit.core.security.JackrabbitSecurityManager;
 import org.apache.jackrabbit.core.security.authentication.AuthContext;
-import org.apache.jackrabbit.core.security.authorization.PrivilegeRegistry;
 import org.apache.jackrabbit.core.security.authentication.token.TokenBasedAuthentication;
+import org.apache.jackrabbit.core.security.authorization.PrivilegeRegistry;
 import org.apache.jackrabbit.core.security.simple.SimpleSecurityManager;
-import org.apache.jackrabbit.core.cache.CacheManager;
 import org.apache.jackrabbit.core.state.ChangeLog;
 import org.apache.jackrabbit.core.state.ISMLocking;
 import org.apache.jackrabbit.core.state.ItemStateException;
@@ -206,7 +200,7 @@ public class RepositoryImpl extends AbstractRepository
     /**
      * active sessions (weak references)
      */
-    private final Map<SessionImpl, SessionImpl> activeSessions =
+    private final Map<Session, Session> activeSessions =
             new ReferenceMap(ReferenceMap.WEAK, ReferenceMap.WEAK);
 
     // flag indicating if repository has been shut down
@@ -233,17 +227,10 @@ public class RepositoryImpl extends AbstractRepository
      */
     private final CacheManager cacheMgr = new CacheManager();
 
-    private final JmxRegistry jmxRegistry = new JmxRegistryImpl();
-
     /**
      * Chanel for posting create workspace messages.
      */
     private WorkspaceEventChannel createWorkspaceEventChannel;
-
-    /**
-     * Scheduled executor service.
-     */
-    protected final ScheduledExecutorService executor;
 
     /**
      * Protected constructor.
@@ -254,32 +241,6 @@ public class RepositoryImpl extends AbstractRepository
      *                             or another error occurs.
      */
     protected RepositoryImpl(RepositoryConfig repConfig) throws RepositoryException {
-        // we should use the jackrabbit classloader for all background threads
-        // from the pool
-        final ClassLoader poolClassLoader = this.getClass().getClassLoader();
-        ScheduledThreadPoolExecutor executor = new ScheduledThreadPoolExecutor(
-                Runtime.getRuntime().availableProcessors() * 2,
-                new ThreadFactory() {
-
-                    final AtomicInteger threadNumber = new AtomicInteger(1);
-
-                    /**
-                     * @see java.util.concurrent.ThreadFactory#newThread(java.lang.Runnable)
-                     */
-                    public Thread newThread(Runnable r) {
-                        final Thread t = new Thread(null, r,
-                                              "jackrabbit-pool-" + threadNumber.getAndIncrement(),
-                                              0);
-                        t.setDaemon(true);
-                        if (t.getPriority() != Thread.NORM_PRIORITY)
-                            t.setPriority(Thread.NORM_PRIORITY);
-                        t.setContextClassLoader(poolClassLoader);
-                        return t;
-                    }
-                },
-                new ThreadPoolExecutor.CallerRunsPolicy());
-        this.executor = executor;
-
         // Acquire a lock on the repository home
         repLock = repConfig.getRepositoryLockMechanism();
         repLock.init(repConfig.getHomeDir());
@@ -358,9 +319,6 @@ public class RepositoryImpl extends AbstractRepository
 
             // initialize system search manager
             getSystemSearchManager(repConfig.getDefaultWorkspaceName());
-
-            //this has to be live before initSecurityManager(), to be able to track all the queries
-            initJmxRegistry();
 
             // Initialise the security manager;
             initSecurityManager();
@@ -466,10 +424,6 @@ public class RepositoryImpl extends AbstractRepository
      */
     public CacheManager getCacheManager() {
         return cacheMgr;
-    }
-
-    public JmxRegistry getJmxRegistry(){
-        return jmxRegistry;
     }
 
     /**
@@ -655,8 +609,7 @@ public class RepositoryImpl extends AbstractRepository
                         repConfig,
                         getWorkspaceInfo(wspName).itemStateMgr,
                         context.getInternalVersionManager().getPersistenceManager(),
-                        SYSTEM_ROOT_NODE_ID,
-                        null, null, executor);
+                        SYSTEM_ROOT_NODE_ID, null, null);
 
                 SystemSession defSysSession = getSystemSession(wspName);
                 ObservationManager obsMgr = defSysSession.getWorkspace().getObservationManager();
@@ -1113,14 +1066,14 @@ public class RepositoryImpl extends AbstractRepository
         // (copy sessions to array to avoid ConcurrentModificationException;
         // manually copy entries rather than calling ReferenceMap#toArray() in
         // order to work around  http://issues.apache.org/bugzilla/show_bug.cgi?id=25551)
-        List<SessionImpl> sa;
+        List<Session> sa;
         synchronized (activeSessions) {
-            sa = new ArrayList<SessionImpl>(activeSessions.size());
-            for (SessionImpl session : activeSessions.values()) {
+            sa = new ArrayList<Session>(activeSessions.size());
+            for (Session session : activeSessions.values()) {
                 sa.add(session);
             }
         }
-        for (SessionImpl session : sa) {
+        for (Session session : sa) {
             if (session != null) {
                 session.logout();
             }
@@ -1179,6 +1132,7 @@ public class RepositoryImpl extends AbstractRepository
         notifyAll();
 
         // Shut down the executor service
+        ScheduledExecutorService executor = context.getExecutor();
         executor.shutdown();
         try {
             // Wait for all remaining background threads to terminate
@@ -1200,10 +1154,6 @@ public class RepositoryImpl extends AbstractRepository
                 log.error("failed to release the repository lock", e);
             }
         }
-
-        context.getTimer().cancel();
-
-        jmxRegistry.stop();
 
         log.info("Repository has been shutdown");
     }
@@ -1463,10 +1413,6 @@ public class RepositoryImpl extends AbstractRepository
             ipmList[i] = (IterablePersistenceManager) pm;
         }
         return new GarbageCollector(context.getDataStore(), ipmList, sessions);
-    }
-
-    protected void initJmxRegistry(){
-        this.jmxRegistry.start();
     }
 
     //-----------------------------------------------------------< Repository >
@@ -1909,7 +1855,7 @@ public class RepositoryImpl extends AbstractRepository
                             itemStateMgr, persistMgr,
                             context.getRootNodeId(),
                             getSystemSearchManager(getName()),
-                            SYSTEM_ROOT_NODE_ID, executor);
+                            SYSTEM_ROOT_NODE_ID);
                 }
                 return searchMgr;
             }
@@ -1949,7 +1895,8 @@ public class RepositoryImpl extends AbstractRepository
          * @return the lock manager
          */
         protected LockManagerImpl createLockManager() throws RepositoryException {
-            return new LockManagerImpl(getSystemSession(), fs, executor);
+            return new LockManagerImpl(
+                    getSystemSession(), fs, context.getExecutor());
         }
 
         /**
@@ -2398,7 +2345,7 @@ public class RepositoryImpl extends AbstractRepository
 
                 synchronized (activeSessions) {
                     // remove workspaces with active sessions
-                    for (SessionImpl ses : activeSessions.values()) {
+                    for (Session ses : activeSessions.values()) {
                         wspNames.remove(ses.getWorkspace().getName());
                     }
                 }

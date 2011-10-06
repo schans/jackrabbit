@@ -110,13 +110,13 @@ public class CombinedProvider extends AbstractAccessControlProvider {
         providers[0] = new org.apache.jackrabbit.core.security.authorization.acl.ACLProvider();
         Map config = new HashMap(configuration);
         config.put(PARAM_OMIT_DEFAULT_PERMISSIONS, Boolean.TRUE);
-        providers[0].init(systemSession, config);
+        providers[0].init(session, config);
 
         // 2) the principal-base ACL provider which is intended to provide
         //    the default/standard permissions present at an item for a given
         //    set of principals.
         providers[1] = new ACLProvider();
-        providers[1].init(systemSession, configuration);
+        providers[1].init(session, configuration);
     }
 
     /**
@@ -238,6 +238,16 @@ public class CombinedProvider extends AbstractAccessControlProvider {
             Result res = null;
             for (AbstractCompiledPermissions acp : cPermissions) {
                 Result other = acp.getResult(absPath);
+                res = (res == null) ? other : res.combine(other);
+            }
+            return res;
+        }
+
+        @Override
+        protected Result buildRepositoryResult() throws RepositoryException {
+            Result res = null;
+            for (AbstractCompiledPermissions acp : cPermissions) {
+                Result other = acp.getResult(null);
                 res = (res == null) ? other : res.combine(other);
             }
             return res;

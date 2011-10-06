@@ -28,7 +28,6 @@ import org.apache.jackrabbit.spi.Path;
 import org.apache.jackrabbit.spi.PropertyId;
 import org.apache.jackrabbit.spi.PropertyInfo;
 import org.apache.jackrabbit.spi.QValue;
-import org.apache.jackrabbit.spi.commons.ItemInfoBuilder.NodeInfoBuilder;
 import org.apache.jackrabbit.spi.commons.identifier.IdFactoryImpl;
 import org.apache.jackrabbit.spi.commons.iterator.Iterators;
 import org.apache.jackrabbit.spi.commons.iterator.Predicate;
@@ -97,22 +96,33 @@ public final class ItemInfoBuilder {
     }
 
     /**
-     * Same as <code>nodeInfoBuilder(name, null)</code>
-     * @param name
+     * Same as <code>nodeInfoBuilder(localName, null)</code>
+     * @param localName
      * @return
      */
-    public static NodeInfoBuilder nodeInfoBuilder(String name) {
-        return nodeInfoBuilder(name, null);
+    public static NodeInfoBuilder nodeInfoBuilder(String localName) {
+        return nodeInfoBuilder(localName, null);
     }
 
     /**
-     * Return a {@link NodeInfoBuilder} for a node with a given <code>name</code>.
-     * @param name  Name of the node
+     * Return a {@link NodeInfoBuilder} for a node with a given <code>localName</code>.
+     * @param localName  localName of the node
      * @param listener  {@link Listener} to receive notifications about {@link NodeInfo}s,
      *                  {@link PropertyInfo}s and {@link ChildInfo}s built.
      * @return
      */
-    public static NodeInfoBuilder nodeInfoBuilder(String name, Listener listener) {
+    public static NodeInfoBuilder nodeInfoBuilder(String localName, Listener listener) {
+        return new NodeInfoBuilder(null, localName, listener);
+    }
+
+    /**
+     * Return a {@link NodeInfoBuilder} for a node with a given <code>name</code>.
+     * @param name  name of the node
+     * @param listener  {@link Listener} to receive notifications about {@link NodeInfo}s,
+     *                  {@link PropertyInfo}s and {@link ChildInfo}s built.
+     * @return
+     */
+    public static NodeInfoBuilder nodeInfoBuilder(Name name, Listener listener) {
         return new NodeInfoBuilder(null, name, listener);
     }
 
@@ -135,7 +145,7 @@ public final class ItemInfoBuilder {
         void createChildInfos(NodeId id, Iterator<ChildInfo> childInfos);
 
         /**
-         * Notification that a new {@link PropertyInfo} has been bult.
+         * Notification that a new {@link PropertyInfo} has been built.
          * @param propertyInfo
          */
         void createPropertyInfo(PropertyInfo propertyInfo);
@@ -147,10 +157,14 @@ public final class ItemInfoBuilder {
      */
     public static class NodeInfoBuilder {
         private final NodeInfoBuilder parent;
-        private final String name;
         private final Listener listener;
 
+        private Path parentPath;
+        private String localName;
+        private String namespace;
+        private Name name;
         private int index = Path.INDEX_DEFAULT;
+        private String uuid;
         private Name primaryTypeName = NameConstants.NT_UNSTRUCTURED;
         private final List<Name> mixins = new ArrayList<Name>();
         private boolean includeChildInfos = true;
@@ -159,7 +173,14 @@ public final class ItemInfoBuilder {
         private final List<ItemInfo> itemInfos = new ArrayList<ItemInfo>();
         private NodeInfo nodeInfo;
 
-        private NodeInfoBuilder(NodeInfoBuilder nodeInfoBuilder, String name, Listener listener) {
+        private NodeInfoBuilder(NodeInfoBuilder nodeInfoBuilder, String localName, Listener listener) {
+            super();
+            parent = nodeInfoBuilder;
+            this.localName = localName;
+            this.listener = listener;
+        }
+
+        private NodeInfoBuilder(NodeInfoBuilder nodeInfoBuilder, Name name, Listener listener) {
             super();
             parent = nodeInfoBuilder;
             this.name = name;
@@ -167,39 +188,88 @@ public final class ItemInfoBuilder {
         }
 
         /**
-         * Create a new child {@link PropertyInfo} with a given <code>name</code> and a given
+         * Create a new child {@link PropertyInfo} with a given <code>localName</code> and a given
          * <code>value</code> of type <code>String</code> on this {@link NodeInfo}.
          *
-         * @param name
+         * @param localName
          * @param value
          * @return  <code>this</code>
          * @throws RepositoryException
          */
-        public PropertyInfoBuilder createPropertyInfo(String name, String value) throws RepositoryException {
-            PropertyInfoBuilder pBuilder = new PropertyInfoBuilder(this, name, listener);
+        public PropertyInfoBuilder createPropertyInfo(String localName, String value) throws RepositoryException {
+            PropertyInfoBuilder pBuilder = new PropertyInfoBuilder(this, localName, listener);
             pBuilder.addValue(value);
             return  pBuilder;
         }
 
         /**
          * Create a new child {@link PropertyInfo} with a given
-         * <code>name</code> on this {@link NodeInfo}.
+         * <code>localName</code> on this {@link NodeInfo}.
          *
-         * @param name
+         * @param localName
          * @return  <code>this</code>
          */
-        public PropertyInfoBuilder createPropertyInfo(String name) {
-            PropertyInfoBuilder pBuilder = new PropertyInfoBuilder(this, name, listener);
-            return  pBuilder;
+        public PropertyInfoBuilder createPropertyInfo(String localName) {
+            return new PropertyInfoBuilder(this, localName, listener);
         }
 
         /**
-         * Create a new child {@link NodeInfo} on this NodeInfo with a given <code>name</code>.
-         * @param name
+         * Create a new child {@link PropertyInfo} on this {@link NodeInfo}.
+         *
          * @return  <code>this</code>
          */
-        public NodeInfoBuilder createNodeInfo(String name) {
-            return new NodeInfoBuilder(this, name, listener);
+        public PropertyInfoBuilder createPropertyInfo() {
+            return new PropertyInfoBuilder(this, null, listener);
+        }
+
+        /**
+         * Create a new child {@link NodeInfo} on this NodeInfo with a given <code>localName</code>.
+         * @param localName
+         * @return  <code>this</code>
+         */
+        public NodeInfoBuilder createNodeInfo(String localName) {
+            return new NodeInfoBuilder(this, localName, listener);
+        }
+
+        /**
+         * Create a new child {@link NodeInfo} on this NodeInfo.
+
+         * @return  <code>this</code>
+         */
+        public NodeInfoBuilder createNodeInfo() {
+            return new NodeInfoBuilder(this, (String) null, listener);
+        }
+
+        /**
+         * Set the <code>name</code> of the node
+         *
+         * @param name
+         * @return
+         */
+        public NodeInfoBuilder setName(Name name) {
+            this.name = name;
+            return this;
+        }
+
+        /**
+         * Set the <code>localName</code> of the node
+         *
+         * @param localName
+         * @return
+         */
+        public NodeInfoBuilder setName(String localName) {
+            this.localName = localName;
+            return this;
+        }
+        /**
+         * Set the namespace
+         *
+         * @param namespace
+         * @return
+         */
+        public NodeInfoBuilder setNamespace(String namespace) {
+            this.namespace = namespace;
+            return this;
         }
 
         /**
@@ -211,6 +281,28 @@ public final class ItemInfoBuilder {
          */
         public NodeInfoBuilder setIndex(int index) {
             this.index = index;
+            return this;
+        }
+
+        /**
+         * Set the uuid
+         *
+         * @param uuid
+         * @return
+         */
+        public NodeInfoBuilder setUUID(String uuid) {
+            this.uuid = uuid;
+            return this;
+        }
+
+        /**
+         * Set the parent's path of the node
+         * 
+         * @param parentPath
+         * @return
+         */
+        public NodeInfoBuilder setParentPath(Path parentPath) {
+            this.parentPath = parentPath;
             return this;
         }
 
@@ -267,7 +359,7 @@ public final class ItemInfoBuilder {
                 stale = true;
                 NodeId id = getId();
 
-                nodeInfo = new NodeInfoImpl(id.getPath(), id, index, primaryTypeName,
+                nodeInfo = new NodeInfoImpl(getPath(), id, index, primaryTypeName,
                         mixins.toArray(new Name[mixins.size()]), Iterators.<PropertyId>empty(),
                         getPropertyIds(), includeChildInfos ? getChildInfos() : null);
 
@@ -284,6 +376,13 @@ public final class ItemInfoBuilder {
                     return parent;
                 }
             }
+        }
+
+        /**
+         * @return  the parent builder of this builder
+         */
+        public NodeInfoBuilder getParent() {
+            return parent;
         }
 
         /**
@@ -322,21 +421,39 @@ public final class ItemInfoBuilder {
         }
 
         private NodeId getId() throws RepositoryException {
-            return IdFactoryImpl.getInstance().createNodeId((String) null, getPath());
+            if (uuid == null) {
+                return IdFactoryImpl.getInstance().createNodeId((String) null, getPath());
+            }
+            else {
+                return IdFactoryImpl.getInstance().createNodeId(uuid);
+            }
         }
 
         private Path getPath() throws RepositoryException {
-            if (parent == null) {
+            if (localName == null && name == null) {
+                throw new IllegalStateException("Name not set");
+            }
+            
+            if (parent == null && parentPath == null) {
                 return PathFactoryImpl.getInstance().getRootPath();
             }
             else {
-                Name name = NameFactoryImpl.getInstance().create(Name.NS_DEFAULT_URI, this.name);
-                return PathFactoryImpl.getInstance().create(parent.getPath(), name, true);
+                Path path = parentPath == null ? parent.getPath() : parentPath;
+                if (name == null) {
+                    String ns = namespace == null ? Name.NS_DEFAULT_URI : namespace;
+                    name = NameFactoryImpl.getInstance().create(ns, localName);
+                }
+                return PathFactoryImpl.getInstance().create(path, name, true);
             }
         }
 
         private Iterator<ChildInfo> getChildInfos() {
-            return transformIterator(itemInfos.iterator(),
+            return transformIterator(filterIterator(itemInfos.iterator(),
+                    new Predicate<ItemInfo>(){
+                        public boolean evaluate(ItemInfo info) {
+                            return info.denotesNode();
+                        }
+                    }),
                     new Transformer<ItemInfo, ChildInfo>(){
                         public ChildInfo transform(ItemInfo info) {
                             return new ChildInfoImpl(
@@ -368,9 +485,11 @@ public final class ItemInfoBuilder {
      */
     public static class PropertyInfoBuilder {
         private final NodeInfoBuilder parent;
-        private final String name;
         private final Listener listener;
 
+        private Name name;
+        private String localName;
+        private String namespace;
         private final List<QValue> values = new ArrayList<QValue>();
         private int type = PropertyType.UNDEFINED;
         private boolean isMultivalued = true;
@@ -378,11 +497,44 @@ public final class ItemInfoBuilder {
         private boolean stale;
         private PropertyInfo propertyInfo;
 
-        private PropertyInfoBuilder(NodeInfoBuilder nodeInfoBuilder, String name, Listener listener) {
+        private PropertyInfoBuilder(NodeInfoBuilder nodeInfoBuilder, String localName, Listener listener) {
             super();
             parent = nodeInfoBuilder;
-            this.name = name;
+            this.localName = localName;
             this.listener = listener;
+        }
+
+        /**
+         * Set the <code>name</code> of this property
+         *
+         * @param name
+         * @return
+         */
+        public PropertyInfoBuilder setName(Name name) {
+            this.name = name;
+            return this;
+        }
+
+        /**
+         * Set the <code>localName</code> of this property
+         *
+         * @param localName
+         * @return
+         */
+        public PropertyInfoBuilder setName(String localName) {
+            this.localName = localName;
+            return this;
+        }
+
+        /**
+         * Set the namespace
+         *
+         * @param namespace
+         * @return
+         */
+        public PropertyInfoBuilder setNamespace(String namespace) {
+            this.namespace = namespace;
+            return this;
         }
 
         /**
@@ -396,7 +548,7 @@ public final class ItemInfoBuilder {
             if (values.size() > 0 && type != values.get(0).getType()) {
                 throw new IllegalStateException("Type mismatch. " +
                         "Required " + PropertyType.nameFromValue(values.get(0).getType()) +
-                        "found " + PropertyType.nameFromValue(type));
+                        " found " + PropertyType.nameFromValue(type));
             }
 
             this.type = type;
@@ -602,13 +754,19 @@ public final class ItemInfoBuilder {
             else if (type == PropertyType.UNDEFINED) {
                 throw new IllegalStateException("Type not set");
             }
+            else if (localName == null && name == null) {
+                throw new IllegalStateException("Name not set");
+            }
             else {
                 stale = true;
 
                 NodeId parentId = parent.getId();
-                Name propertyName = NameFactoryImpl.getInstance().create(Name.NS_DEFAULT_URI, this.name);
-                Path path = PathFactoryImpl.getInstance().create(parentId.getPath(), propertyName, true);
-                PropertyId id = IdFactoryImpl.getInstance().createPropertyId(parentId, propertyName);
+                if (name == null) {
+                    String ns = namespace == null ? Name.NS_DEFAULT_URI : namespace;
+                    name = NameFactoryImpl.getInstance().create(ns, localName);
+                }
+                Path path = PathFactoryImpl.getInstance().create(parent.getPath(), name, true);
+                PropertyId id = IdFactoryImpl.getInstance().createPropertyId(parentId, name);
 
                 propertyInfo = new PropertyInfoImpl(path, id, type, isMultivalued,
                         values.toArray(new QValue[values.size()]));
@@ -618,6 +776,13 @@ public final class ItemInfoBuilder {
                 }
                 return parent.addPropertyInfo(propertyInfo);
             }
+        }
+
+        /**
+         * @return  the parent builder of this builder
+         */
+        public NodeInfoBuilder getParent() {
+            return parent;
         }
 
         /**

@@ -110,6 +110,7 @@ public class PropertyImpl extends ItemImpl implements Property {
         return (PropertyState) state;
     }
 
+    @Override
     protected synchronized ItemState getOrCreateTransientItemState()
             throws RepositoryException {
 
@@ -132,6 +133,7 @@ public class PropertyImpl extends ItemImpl implements Property {
         }
     }
 
+    @Override
     protected void makePersistent() throws InvalidItemStateException {
         if (!isTransient()) {
             log.debug(this + " (" + id + "): there's no transient state to persist");
@@ -142,7 +144,11 @@ public class PropertyImpl extends ItemImpl implements Property {
         PropertyState persistentState = (PropertyState) transientState.getOverlayedState();
         if (persistentState == null) {
             // this property is 'new'
-            persistentState = stateMgr.createNew(transientState);
+            try {
+                persistentState = stateMgr.createNew(transientState);
+            } catch (ItemStateException e) {
+                throw new InvalidItemStateException(e);
+            }
         }
 
         synchronized (persistentState) {
@@ -201,6 +207,7 @@ public class PropertyImpl extends ItemImpl implements Property {
         thisState.setType(transientState.getType());
         thisState.setMultiValued(transientState.isMultiValued());
         thisState.setValues(transientState.getValues());
+        thisState.setModCount(transientState.getModCount());
     }
 
     protected void onRedefine(QPropertyDefinition def) throws RepositoryException {
@@ -258,7 +265,7 @@ public class PropertyImpl extends ItemImpl implements Property {
             throws ValueFormatException, VersionException,
             LockException, ConstraintViolationException,
             RepositoryException {
-        NodeImpl parent = (NodeImpl) getParent();
+        NodeImpl parent = (NodeImpl) getParent(false);
         // check multi-value flag
         if (multipleValues != isMultiple()) {
             String msg = (multipleValues) ?
@@ -307,8 +314,7 @@ public class PropertyImpl extends ItemImpl implements Property {
         // free old values as necessary
         InternalValue[] oldValues = thisState.getValues();
         if (oldValues != null) {
-            for (int i = 0; i < oldValues.length; i++) {
-                InternalValue old = oldValues[i];
+            for (InternalValue old : oldValues) {
                 if (old != null && old.getType() == BINARY) {
                     // make sure temporarily allocated data is discarded
                     // before overwriting it
@@ -325,6 +331,10 @@ public class PropertyImpl extends ItemImpl implements Property {
             type = STRING;
         }
         thisState.setType(type);
+    }
+
+    protected Node getParent(boolean checkPermission) throws RepositoryException {
+        return (Node) itemMgr.getItem(getPropertyState().getParentId(), checkPermission);
     }
 
     /**
@@ -437,6 +447,7 @@ public class PropertyImpl extends ItemImpl implements Property {
     /**
      * {@inheritDoc}
      */
+    @Override
     public Name getQName() {
         return ((PropertyId) id).getName();
     }
@@ -514,6 +525,7 @@ public class PropertyImpl extends ItemImpl implements Property {
         final Binary binary = getValue().getBinary();
         // make sure binary is disposed after stream had been consumed
         return new AutoCloseInputStream(binary.getStream()) {
+            @Override
             public void close() throws IOException {
                 super.close();
                 binary.dispose();
@@ -770,11 +782,11 @@ public class PropertyImpl extends ItemImpl implements Property {
         if (values != null) {
             // check type of values
             int firstValueType = UNDEFINED;
-            for (int i = 0; i < values.length; i++) {
-                if (values[i] != null) {
+            for (Value value : values) {
+                if (value != null) {
                     if (firstValueType == UNDEFINED) {
-                        firstValueType = values[i].getType();
-                    } else if (firstValueType != values[i].getType()) {
+                        firstValueType = value.getType();
+                    } else if (firstValueType != value.getType()) {
                         throw new ValueFormatException(
                                 "inhomogeneous type of values");
                     }
@@ -866,6 +878,7 @@ public class PropertyImpl extends ItemImpl implements Property {
     /**
      * {@inheritDoc}
      */
+    @Override
     public boolean isNode() {
         return false;
     }
@@ -873,6 +886,7 @@ public class PropertyImpl extends ItemImpl implements Property {
     /**
      * {@inheritDoc}
      */
+    @Override
     public String getName() throws RepositoryException {
         // check state of this instance
         sanityCheck();
@@ -882,6 +896,7 @@ public class PropertyImpl extends ItemImpl implements Property {
     /**
      * {@inheritDoc}
      */
+    @Override
     public void accept(ItemVisitor visitor) throws RepositoryException {
         // check state of this instance
         sanityCheck();
@@ -892,8 +907,9 @@ public class PropertyImpl extends ItemImpl implements Property {
     /**
      * {@inheritDoc}
      */
+    @Override
     public Node getParent() throws RepositoryException {
-        return (Node) itemMgr.getItem(getPropertyState().getParentId());
+        return getParent(true);
     }
 
     //--------------------------------------------------------------< Object >

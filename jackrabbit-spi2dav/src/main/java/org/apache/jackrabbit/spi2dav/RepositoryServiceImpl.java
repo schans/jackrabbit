@@ -33,6 +33,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ConcurrentMap;
 
 import javax.jcr.AccessDeniedException;
 import javax.jcr.Credentials;
@@ -62,6 +64,7 @@ import org.apache.commons.httpclient.HostConfiguration;
 import org.apache.commons.httpclient.HttpClient;
 import org.apache.commons.httpclient.HttpConnectionManager;
 import org.apache.commons.httpclient.HttpMethod;
+import org.apache.commons.httpclient.HttpStatus;
 import org.apache.commons.httpclient.MultiThreadedHttpConnectionManager;
 import org.apache.commons.httpclient.URI;
 import org.apache.commons.httpclient.URIException;
@@ -71,6 +74,7 @@ import org.apache.commons.httpclient.methods.HeadMethod;
 import org.apache.commons.httpclient.methods.InputStreamRequestEntity;
 import org.apache.commons.httpclient.methods.RequestEntity;
 import org.apache.commons.httpclient.methods.StringRequestEntity;
+import org.apache.commons.httpclient.params.HttpConnectionManagerParams;
 import org.apache.jackrabbit.commons.webdav.EventUtil;
 import org.apache.jackrabbit.commons.webdav.JcrRemotingConstants;
 import org.apache.jackrabbit.commons.webdav.JcrValueType;
@@ -118,6 +122,7 @@ import org.apache.jackrabbit.spi.commons.conversion.NameResolver;
 import org.apache.jackrabbit.spi.commons.conversion.ParsingNameResolver;
 import org.apache.jackrabbit.spi.commons.conversion.ParsingPathResolver;
 import org.apache.jackrabbit.spi.commons.conversion.PathResolver;
+import org.apache.jackrabbit.spi.commons.iterator.Iterators;
 import org.apache.jackrabbit.spi.commons.name.NameConstants;
 import org.apache.jackrabbit.spi.commons.namespace.AbstractNamespaceResolver;
 import org.apache.jackrabbit.spi.commons.namespace.NamespaceResolver;
@@ -207,6 +212,17 @@ public class RepositoryServiceImpl implements RepositoryService, DavConstants {
 
     private static final SubscriptionInfo S_INFO = new SubscriptionInfo(DefaultEventType.create(EventUtil.EVENT_ALL, ItemResourceConstants.NAMESPACE), true, INFINITE_TIMEOUT);
 
+    /**
+     * Key for the client map during repo creation (no sessionInfo present)
+     */
+    private static final String CLIENT_KEY = "repoCreation";
+
+    /**
+     * Default value for the maximum number of connections per host such as
+     * configured with {@link HttpConnectionManagerParams#setDefaultMaxConnectionsPerHost(int)}.
+     */
+    public static final int MAX_CONNECTIONS_DEFAULT = 20;
+
     private final IdFactory idFactory;
     private final NameFactory nameFactory;
     private final PathFactory pathFactory;
@@ -215,31 +231,75 @@ public class RepositoryServiceImpl implements RepositoryService, DavConstants {
 
     private final int itemInfoCacheSize;
 
-    private final Document domFactory;
     private final NamespaceCache nsCache;
     private final URIResolverImpl uriResolver;
 
     private final HostConfiguration hostConfig;
-    private final Map<SessionInfo, HttpClient> clients = new HashMap<SessionInfo, HttpClient>();
+    private final ConcurrentMap<Object, HttpClient> clients;
     private final HttpConnectionManager connectionManager;
 
     private final Map<Name, QNodeTypeDefinition> nodeTypeDefinitions = new HashMap<Name, QNodeTypeDefinition>();
 
-    private Map<String, QValue[]> descriptors;
+    /** Repository descriptors. */
+    private final Map<String, QValue[]> descriptors =
+            new HashMap<String, QValue[]>();
 
+    /**
+     * Same as {@link #RepositoryServiceImpl(String, IdFactory, NameFactory, PathFactory, QValueFactory, int, int)}
+     * using {@link ItemInfoCacheImpl#DEFAULT_CACHE_SIZE)} as size for the item
+     * cache and {@link #MAX_CONNECTIONS_DEFAULT} for the maximum number of
+     * connections on the client.
+     *
+     * @param uri The server uri.
+     * @param idFactory The id factory.
+     * @param nameFactory The name factory.
+     * @param pathFactory The path factory.
+     * @param qValueFactory The value factory.
+     * @throws RepositoryException If an error occurs.
+     */
     public RepositoryServiceImpl(String uri, IdFactory idFactory,
-            NameFactory nameFactory,
-            PathFactory pathFactory,
-            QValueFactory qValueFactory) throws RepositoryException {
-
+                                 NameFactory nameFactory, PathFactory pathFactory,
+                                 QValueFactory qValueFactory) throws RepositoryException {
         this(uri, idFactory, nameFactory, pathFactory, qValueFactory, ItemInfoCacheImpl.DEFAULT_CACHE_SIZE);
     }
 
+    /**
+     * Same as {@link #RepositoryServiceImpl(String, IdFactory, NameFactory, PathFactory, QValueFactory, int, int)}
+     * using {@link #MAX_CONNECTIONS_DEFAULT} for the maximum number of
+     * connections on the client.
+     * 
+     * @param uri The server uri.
+     * @param idFactory The id factory.
+     * @param nameFactory The name factory.
+     * @param pathFactory The path factory.
+     * @param qValueFactory The value factory.
+     * @param itemInfoCacheSize The size of the item info cache.
+     * @throws RepositoryException If an error occurs.
+     */
     public RepositoryServiceImpl(String uri, IdFactory idFactory,
-                                 NameFactory nameFactory,
-                                 PathFactory pathFactory,
-                                 QValueFactory qValueFactory,
-                                 int itemInfoCacheSize) throws RepositoryException {
+                                 NameFactory nameFactory, PathFactory pathFactory,
+                                 QValueFactory qValueFactory, int itemInfoCacheSize) throws RepositoryException {
+        this(uri, idFactory, nameFactory, pathFactory, qValueFactory, itemInfoCacheSize, MAX_CONNECTIONS_DEFAULT);
+    }
+
+    /**
+     * Creates a new instance of this repository service.
+     *
+     * @param uri The server uri.
+     * @param idFactory The id factory.
+     * @param nameFactory The name factory.
+     * @param pathFactory The path factory.
+     * @param qValueFactory The value factory.
+     * @param itemInfoCacheSize The size of the item info cache.
+     * @param maximumHttpConnections A int &gt;0 defining the maximum number of
+     * connections per host to be configured on
+     * {@link HttpConnectionManagerParams#setDefaultMaxConnectionsPerHost(int)}.
+     * @throws RepositoryException If an error occurs.
+     */
+    public RepositoryServiceImpl(String uri, IdFactory idFactory,
+                                 NameFactory nameFactory, PathFactory pathFactory,
+                                 QValueFactory qValueFactory, int itemInfoCacheSize,
+                                 int maximumHttpConnections ) throws RepositoryException {
         if (uri == null || "".equals(uri)) {
             throw new RepositoryException("Invalid repository uri '" + uri + "'.");
         }
@@ -254,25 +314,38 @@ public class RepositoryServiceImpl implements RepositoryService, DavConstants {
         this.itemInfoCacheSize = itemInfoCacheSize;
 
         try {
-            domFactory = DomUtil.createDocument();
-        } catch (ParserConfigurationException e) {
-            throw new RepositoryException(e);
-        }
-
-        try {
             URI repositoryUri = new URI((uri.endsWith("/")) ? uri : uri+"/", true);
             hostConfig = new HostConfiguration();
             hostConfig.setHost(repositoryUri);
 
             nsCache = new NamespaceCache();
-            uriResolver = new URIResolverImpl(repositoryUri, this, domFactory);
+            uriResolver = new URIResolverImpl(repositoryUri, this, DomUtil.createDocument());
             NamePathResolver resolver = new NamePathResolverImpl(nsCache);
             valueFactory = new ValueFactoryQImpl(qValueFactory, resolver);
 
         } catch (URIException e) {
             throw new RepositoryException(e);
+        } catch (ParserConfigurationException e) {
+            throw new RepositoryException(e);
         }
+
         connectionManager = new MultiThreadedHttpConnectionManager();
+        if (maximumHttpConnections > 0) {
+            HttpConnectionManagerParams connectionParams = connectionManager.getParams();
+            connectionParams.setDefaultMaxConnectionsPerHost(maximumHttpConnections);
+        }
+
+        // This configuration of the clients cache assumes that the level of
+        // concurrency on this map will be equal to the default number of maximum
+        // connections allowed on the httpClient level.
+        // TODO: review again
+        int concurrencyLevel = MAX_CONNECTIONS_DEFAULT;
+        int initialCapacity = MAX_CONNECTIONS_DEFAULT;
+        if (maximumHttpConnections > 0) {
+            concurrencyLevel = maximumHttpConnections;
+            initialCapacity = maximumHttpConnections;
+        }
+        clients = new ConcurrentHashMap<Object, HttpClient>(concurrencyLevel, .75f, initialCapacity);
     }
 
     private static void checkSessionInfo(SessionInfo sessionInfo) throws RepositoryException {
@@ -365,8 +438,21 @@ public class RepositoryServiceImpl implements RepositoryService, DavConstants {
         return resolver;
     }
 
+    /**
+     * Returns a key for the httpClient hash. The key is either the specified
+     * SessionInfo or a marker if the session info is null (used during
+     * repository instantiation).
+     *
+     * @param sessionInfo
+     * @return Key for the client map.
+     */
+    private static Object getClientKey(SessionInfo sessionInfo) {
+        return (sessionInfo == null) ? CLIENT_KEY : sessionInfo;
+    }
+
     protected HttpClient getClient(SessionInfo sessionInfo) throws RepositoryException {
-        HttpClient client = clients.get(sessionInfo);
+        Object clientKey = getClientKey(sessionInfo);
+        HttpClient client = clients.get(clientKey);
         if (client == null) {
             client = new HttpClient(connectionManager);
             client.setHostConfiguration(hostConfig);
@@ -380,14 +466,14 @@ public class RepositoryServiceImpl implements RepositoryService, DavConstants {
                 client.getParams().setAuthenticationPreemptive(true);
             }
             client.getState().setCredentials(AuthScope.ANY, creds);
-            clients.put(sessionInfo, client);
+            clients.put(clientKey, client);
             log.debug("Created Client " + client + " for SessionInfo " + sessionInfo);
         }
         return client;
     }
 
     private void removeClient(SessionInfo sessionInfo) {
-        HttpClient cl = clients.remove(sessionInfo);
+        HttpClient cl = clients.remove(getClientKey(sessionInfo));
         log.debug("Removed Client " + cl + " for SessionInfo " + sessionInfo);
     }
 
@@ -528,16 +614,25 @@ public class RepositoryServiceImpl implements RepositoryService, DavConstants {
      * @see RepositoryService#getRepositoryDescriptors()
      */
     public Map<String, QValue[]> getRepositoryDescriptors() throws RepositoryException {
-        if (descriptors == null) {
+        if (descriptors.isEmpty()) {
             ReportInfo info = new ReportInfo(JcrRemotingConstants.REPORT_REPOSITORY_DESCRIPTORS, ItemResourceConstants.NAMESPACE);
             ReportMethod method = null;
             try {
                 method = new ReportMethod(uriResolver.getRepositoryUri(), info);
-                getClient(null).executeMethod(method);
+                int sc = getClient(null).executeMethod(method);
+                if (sc == HttpStatus.SC_UNAUTHORIZED
+                        || sc == HttpStatus.SC_PROXY_AUTHENTICATION_REQUIRED) {
+                    // JCR-3076: Mandatory authentication prevents us from
+                    // accessing the descriptors on the server, so instead
+                    // of failing with an exception we simply return an empty
+                    // set of descriptors
+                    log.warn("Authentication required to access repository descriptors");
+                    return descriptors;
+                }
+
                 method.checkSuccess();
                 Document doc = method.getResponseBodyAsDocument();
 
-                descriptors = new HashMap<String, QValue[]>();
                 if (doc != null) {
                     Element rootElement = doc.getDocumentElement();
                     ElementIterator nsElems = DomUtil.getChildren(rootElement, JcrRemotingConstants.XML_DESCRIPTOR, ItemResourceConstants.NAMESPACE);
@@ -704,7 +799,7 @@ public class RepositoryServiceImpl implements RepositoryService, DavConstants {
         try {
             String uri = getItemUri(itemId, sessionInfo);
             ReportInfo reportInfo = new ReportInfo(JcrRemotingConstants.REPORT_PRIVILEGES, ItemResourceConstants.NAMESPACE);
-            reportInfo.setContentElement(DomUtil.hrefToXml(uri, domFactory));
+            reportInfo.setContentElement(DomUtil.hrefToXml(uri, DomUtil.createDocument()));
 
             method = new ReportMethod(uriResolver.getWorkspaceUri(sessionInfo.getWorkspaceName()), reportInfo);
             getClient(sessionInfo).executeMethod(method);
@@ -732,6 +827,8 @@ public class RepositoryServiceImpl implements RepositoryService, DavConstants {
             // check privileges present against required privileges.
             return privileges.containsAll(requiredPrivileges);
         } catch (IOException e) {
+            throw new RepositoryException(e);
+        } catch (ParserConfigurationException e) {
             throw new RepositoryException(e);
         } catch (DavException e) {
             throw ExceptionConverter.generate(e);
@@ -904,17 +1001,23 @@ public class RepositoryServiceImpl implements RepositoryService, DavConstants {
     /**
      * @see RepositoryService#getItemInfos(SessionInfo, NodeId)
      */
-    public Iterator<? extends ItemInfo> getItemInfos(SessionInfo sessionInfo, NodeId nodeId) throws RepositoryException {
+    public Iterator<? extends ItemInfo> getItemInfos(SessionInfo sessionInfo, ItemId itemId) throws RepositoryException {
         // TODO: implement batch read properly:
         // currently: missing 'value/values' property PropertyInfo cannot be built
         // currently: missing prop-names with child-NodeInfo
-        List<ItemInfo> l = new ArrayList<ItemInfo>();
-        NodeInfo nInfo = getNodeInfo(sessionInfo, nodeId);
-        l.add(nInfo);
-        // at least add propertyInfos for the meta-props already known from the
-        // nodeInfo.
-        l.addAll(buildPropertyInfos(nInfo));
-        return l.iterator();
+        if (itemId.denotesNode()) {
+            List<ItemInfo> l = new ArrayList<ItemInfo>();
+            NodeInfo nInfo = getNodeInfo(sessionInfo, (NodeId) itemId);
+            l.add(nInfo);
+            // at least add propertyInfos for the meta-props already known from the
+            // nodeInfo.
+            l.addAll(buildPropertyInfos(nInfo));
+            return l.iterator();
+        }
+        else {
+            PropertyInfo pInfo = getPropertyInfo(sessionInfo, (PropertyId) itemId);
+            return Iterators.singleton(pInfo);
+        }
     }
 
     private NodeInfoImpl buildNodeInfo(MultiStatusResponse nodeResponse,
@@ -1359,7 +1462,7 @@ public class RepositoryServiceImpl implements RepositoryService, DavConstants {
             DavPropertySet ps = responses[0].getProperties(DavServletResponse.SC_OK);
             if (ps.contains(DavPropertyName.LOCKDISCOVERY)) {
                 DavProperty<?> p = ps.get(DavPropertyName.LOCKDISCOVERY);
-                LockDiscovery ld = LockDiscovery.createFromXml(p.toXml(domFactory));
+                LockDiscovery ld = LockDiscovery.createFromXml(p.toXml(DomUtil.createDocument()));
                 NodeId parentId = getParentId(ps, sessionInfo);
                 return retrieveLockInfo(ld, sessionInfo, nodeId, parentId);
             }  else {
@@ -1368,6 +1471,8 @@ public class RepositoryServiceImpl implements RepositoryService, DavConstants {
                 return null;
             }
         } catch (IOException e) {
+            throw new RepositoryException(e);
+        } catch (ParserConfigurationException e) {
             throw new RepositoryException(e);
         } catch (DavException e) {
             throw ExceptionConverter.generate(e);
@@ -1607,7 +1712,7 @@ public class RepositoryServiceImpl implements RepositoryService, DavConstants {
         try {
             UpdateInfo uInfo;
             if (removeExisting || relPath != null) {
-                Element uElem = UpdateInfo.createUpdateElement(updateSource, updateType, domFactory);
+                Element uElem = UpdateInfo.createUpdateElement(updateSource, updateType, DomUtil.createDocument());
                 if (removeExisting) {
                     DomUtil.addChildElement(uElem, JcrRemotingConstants.XML_REMOVEEXISTING, ItemResourceConstants.NAMESPACE);
                 }
@@ -1623,6 +1728,8 @@ public class RepositoryServiceImpl implements RepositoryService, DavConstants {
             UpdateMethod method = new UpdateMethod(uri, uInfo);
             execute(method, sessionInfo);
         } catch (IOException e) {
+            throw new RepositoryException(e);
+        } catch (ParserConfigurationException e) {
             throw new RepositoryException(e);
         } catch (DavException e) {
             throw ExceptionConverter.generate(e);
@@ -1641,10 +1748,11 @@ public class RepositoryServiceImpl implements RepositoryService, DavConstants {
      */
     public Iterator<NodeId> merge(SessionInfo sessionInfo, NodeId nodeId, String srcWorkspaceName, boolean bestEffort, boolean isShallow) throws NoSuchWorkspaceException, AccessDeniedException, MergeException, LockException, InvalidItemStateException, RepositoryException {
         try {
+            Document doc = DomUtil.createDocument();
             String wspHref = uriResolver.getWorkspaceUri(srcWorkspaceName);
-            Element mElem = MergeInfo.createMergeElement(new String[] {wspHref}, !bestEffort, false, domFactory);
+            Element mElem = MergeInfo.createMergeElement(new String[] {wspHref}, !bestEffort, false, doc);
             if (isShallow) {
-                mElem.appendChild(DomUtil.depthToXml(false, domFactory));
+                mElem.appendChild(DomUtil.depthToXml(false, doc));
             }
             MergeInfo mInfo = new MergeInfo(mElem);
 
@@ -1659,6 +1767,8 @@ public class RepositoryServiceImpl implements RepositoryService, DavConstants {
             }
             return failedIds.iterator();
         } catch (IOException e) {
+            throw new RepositoryException(e);
+        } catch (ParserConfigurationException e) {
             throw new RepositoryException(e);
         } catch (DavException e) {
             throw ExceptionConverter.generate(e);
@@ -1859,8 +1969,7 @@ public class RepositoryServiceImpl implements RepositoryService, DavConstants {
         checkSubscription(subscription);
 
         EventSubscriptionImpl subscr = (EventSubscriptionImpl) subscription;
-        String rootUri = uriResolver.getRootItemUri(
-                subscr.getSessionInfo().getWorkspaceName());
+        String rootUri = uriResolver.getRootItemUri(subscr.getSessionInfo().getWorkspaceName());
 
         return poll(rootUri, subscr.getId(), timeout, subscr.getSessionInfo());
     }
@@ -1979,7 +2088,7 @@ public class RepositoryServiceImpl implements RepositoryService, DavConstants {
             if (disc.isEmpty()) {
                 events = new EventBundle[0];
             } else {
-                Element discEl = disc.toXml(domFactory);
+                Element discEl = disc.toXml(DomUtil.createDocument());
                 ElementIterator it = DomUtil.getChildren(discEl,
                         ObservationConstants.XML_EVENTBUNDLE,
                         ObservationConstants.NAMESPACE);
@@ -2002,6 +2111,8 @@ public class RepositoryServiceImpl implements RepositoryService, DavConstants {
             }
             return events;
         } catch (IOException e) {
+            throw new RepositoryException(e);
+        } catch (ParserConfigurationException e) {
             throw new RepositoryException(e);
         } catch (DavException e) {
             throw ExceptionConverter.generate(e);
@@ -2206,12 +2317,12 @@ public class RepositoryServiceImpl implements RepositoryService, DavConstants {
     /**
      * @see RepositoryService#getQNodeTypeDefinitions(SessionInfo)
      */
-    public Iterator<QNodeTypeDefinition> getQNodeTypeDefinitions(SessionInfo sessionInfo) throws RepositoryException {
-        ReportInfo info = new ReportInfo(JcrRemotingConstants.REPORT_NODETYPES, ItemResourceConstants.NAMESPACE);
-        info.setContentElement(DomUtil.createElement(domFactory, NodeTypeConstants.XML_REPORT_ALLNODETYPES, ItemResourceConstants.NAMESPACE));
-
+    public Iterator<QNodeTypeDefinition> getQNodeTypeDefinitions(SessionInfo sessionInfo) throws RepositoryException {       
         ReportMethod method = null;
         try {
+            ReportInfo info = new ReportInfo(JcrRemotingConstants.REPORT_NODETYPES, ItemResourceConstants.NAMESPACE);
+            info.setContentElement(DomUtil.createElement(DomUtil.createDocument(), NodeTypeConstants.XML_REPORT_ALLNODETYPES, ItemResourceConstants.NAMESPACE));
+
             String workspaceUri = uriResolver.getWorkspaceUri(sessionInfo.getWorkspaceName());
             method = new ReportMethod(workspaceUri, info);
             getClient(sessionInfo).executeMethod(method);
@@ -2220,6 +2331,8 @@ public class RepositoryServiceImpl implements RepositoryService, DavConstants {
             Document reportDoc = method.getResponseBodyAsDocument();
             return retrieveQNodeTypeDefinitions(sessionInfo, reportDoc);
         } catch (IOException e) {
+            throw new RepositoryException(e);
+        } catch (ParserConfigurationException e) {
             throw new RepositoryException(e);
         } catch (DavException e) {
             throw ExceptionConverter.generate(e);

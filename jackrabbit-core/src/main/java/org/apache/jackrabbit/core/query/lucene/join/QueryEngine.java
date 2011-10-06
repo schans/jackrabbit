@@ -18,13 +18,13 @@ package org.apache.jackrabbit.core.query.lucene.join;
 
 import static javax.jcr.query.qom.QueryObjectModelConstants.JCR_JOIN_TYPE_LEFT_OUTER;
 import static javax.jcr.query.qom.QueryObjectModelConstants.JCR_JOIN_TYPE_RIGHT_OUTER;
-import static javax.jcr.query.qom.QueryObjectModelConstants.JCR_ORDER_DESCENDING;
 
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -48,79 +48,43 @@ import javax.jcr.query.RowIterator;
 import javax.jcr.query.qom.Column;
 import javax.jcr.query.qom.Constraint;
 import javax.jcr.query.qom.Join;
-import javax.jcr.query.qom.Operand;
 import javax.jcr.query.qom.Ordering;
 import javax.jcr.query.qom.PropertyValue;
+import javax.jcr.query.qom.QueryObjectModelConstants;
 import javax.jcr.query.qom.QueryObjectModelFactory;
 import javax.jcr.query.qom.Selector;
 import javax.jcr.query.qom.Source;
 
 import org.apache.commons.io.IOUtils;
+import org.apache.jackrabbit.JcrConstants;
 import org.apache.jackrabbit.commons.JcrUtils;
 import org.apache.jackrabbit.commons.iterator.RowIteratorAdapter;
 import org.apache.jackrabbit.commons.query.qom.OperandEvaluator;
 import org.apache.jackrabbit.core.query.lucene.LuceneQueryFactory;
+import org.apache.jackrabbit.core.query.lucene.sort.DynamicOperandFieldComparatorSource;
+import org.apache.jackrabbit.core.query.lucene.sort.RowComparator;
+import org.apache.lucene.search.Sort;
+import org.apache.lucene.search.SortField;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 public class QueryEngine {
-    
+
     /**
      * The logger instance for this class
      */
-    private static final Logger log = LoggerFactory.getLogger(QueryEngine.class);
+    private static final Logger log = LoggerFactory
+            .getLogger(QueryEngine.class);
+    
+    //TODO remove this when the implementation is stable
+    public static final String NATIVE_SORT_SYSTEM_PROPERTY = "useNativeSort";
+
+    private static final boolean NATIVE_SORT = Boolean.valueOf(System
+            .getProperty(NATIVE_SORT_SYSTEM_PROPERTY, "false"));
 
     private static final int printIndentStep = 4;
-
-    /**
-     * Row comparator.
-     */
-    private static class RowComparator implements Comparator<Row> {
-
-        private final ValueComparator comparator = new ValueComparator();
-
-        private final Ordering[] orderings;
-        
-        private final OperandEvaluator evaluator;
-
-        private RowComparator(Ordering[] orderings, OperandEvaluator evaluator) {
-            this.orderings = orderings;
-            this.evaluator = evaluator;
-        }
-
-        public int compare(Row a, Row b) {
-            try {
-                for (Ordering ordering : orderings) {
-                    Operand operand = ordering.getOperand();
-                    Value[] va = evaluator.getValues(operand, a);
-                    Value[] vb = evaluator.getValues(operand, b);
-                    int d = compare(va, vb);
-                    if (d != 0) {
-                        if (JCR_ORDER_DESCENDING.equals(ordering.getOrder())) {
-                            return -d;
-                        } else {
-                            return d;
-                        }
-                    }
-                }
-                return 0;
-            } catch (RepositoryException e) {
-                throw new RuntimeException(
-                        "Unable to compare rows " + a + " and " + b, e);
-            }
-        }
-
-        private int compare(Value[] a, Value[] b) {
-            for (int i = 0; i < a.length && i < b.length; i++) {
-                int d = comparator.compare(a[i], b[i]);
-                if (d != 0) {
-                    return d;
-                }
-            }
-            return a.length - b.length;
-        }
-
-    }
+    
+    private final Session session;
 
     private final LuceneQueryFactory lqf;
 
@@ -134,8 +98,8 @@ public class QueryEngine {
 
     public QueryEngine(Session session, LuceneQueryFactory lqf,
             Map<String, Value> variables) throws RepositoryException {
+        this.session = session;
         this.lqf = lqf;
-
         Workspace workspace = session.getWorkspace();
         this.ntManager = workspace.getNodeTypeManager();
         this.qomFactory = workspace.getQueryManager().getQOMFactory();
@@ -150,10 +114,8 @@ public class QueryEngine {
         long time = System.currentTimeMillis();
         QueryResult qr = execute(columns, source, constraint, orderings,
                 offset, limit, 2);
-        if (log.isDebugEnabled()) {
-            time = System.currentTimeMillis() - time;
-            log.debug("SQL2 QUERY execute took " + time + " ms.");
-        }
+        log.debug("SQL2 QUERY execute took {} ms. native sort is {}.",
+                System.currentTimeMillis() - time, NATIVE_SORT);
         return qr;
     }
 
@@ -177,10 +139,9 @@ public class QueryEngine {
             long limit, int printIndentation) throws RepositoryException {
         // Swap the join sources to normalize all outer joins to left
         if (JCR_JOIN_TYPE_RIGHT_OUTER.equalsIgnoreCase(join.getJoinType())) {
-            if (log.isDebugEnabled()) {
-                log.debug(genString(printIndentation)
-                        + "SQL2 RIGHT OUTER JOIN transformed to LEFT OUTER JOIN.");
-            }
+            log.debug(
+                    "{} SQL2 RIGHT OUTER JOIN transformed to LEFT OUTER JOIN.",
+                    genString(printIndentation));
             Join betterJoin = qomFactory.join(join.getRight(), join.getLeft(),
                     JCR_JOIN_TYPE_LEFT_OUTER, join.getJoinCondition());
             return execute(columns, betterJoin, constraint, orderings, offset,
@@ -196,9 +157,64 @@ public class QueryEngine {
 
         logQueryAnalysis(csInfo, printIndentation);
 
-        long timeJoinLeftSide = System.currentTimeMillis();
+        boolean isOuterJoin = JCR_JOIN_TYPE_LEFT_OUTER.equalsIgnoreCase(join
+                .getJoinType());
+        QueryResult result = execute(merger, csInfo, isOuterJoin,
+                printIndentation);
+
+        long sort = System.currentTimeMillis();
+        QueryResult sortedResult = sort(result, orderings, evaluator, offset,
+                limit);
+        log.debug(" {} SQL2 SORT took {} ms.", genString(printIndentation),
+                System.currentTimeMillis() - sort);
+        return sortedResult;
+    }
+
+    protected QueryResult execute(JoinMerger merger,
+            ConstraintSplitInfo csInfo, boolean isOuterJoin,
+            int printIndentation) throws RepositoryException {
+
         Comparator<Row> leftCo = new RowPathComparator(
                 merger.getLeftSelectors());
+        long timeJoinLeftSide = System.currentTimeMillis();
+
+        if (csInfo.isMultiple()) {
+            log.debug("{} SQL2 JOIN execute: there are multiple inner splits.",
+                    genString(printIndentation));
+
+            // first branch
+            long bTime = System.currentTimeMillis();
+            QueryResult branch1 = execute(merger,
+                    csInfo.getLeftInnerConstraints(), isOuterJoin,
+                    printIndentation + printIndentStep);
+            Set<Row> allRows = new TreeSet<Row>(new RowPathComparator(
+                    Arrays.asList(merger.getSelectorNames())));
+            RowIterator ri1 = branch1.getRows();
+            while (ri1.hasNext()) {
+                Row r = ri1.nextRow();
+                allRows.add(r);
+            }
+            log.debug("{} SQL2 JOIN executed first branch, took {} ms.",
+                    genString(printIndentation), System.currentTimeMillis()
+                            - bTime);
+
+            // second branch
+            bTime = System.currentTimeMillis();
+            QueryResult branch2 = execute(merger,
+                    csInfo.getRightInnerConstraints(), isOuterJoin,
+                    printIndentation + printIndentStep);
+            RowIterator ri2 = branch2.getRows();
+            while (ri2.hasNext()) {
+                Row r = ri2.nextRow();
+                allRows.add(r);
+            }
+            log.debug("{} SQL2 JOIN executed second branch, took {} ms.",
+                    genString(printIndentation), System.currentTimeMillis()
+                            - bTime);
+            return new SimpleQueryResult(merger.getColumnNames(),
+                    merger.getSelectorNames(), new RowIteratorAdapter(allRows));
+        }
+
         Set<Row> leftRows = buildLeftRowsJoin(csInfo, leftCo, printIndentation
                 + printIndentStep);
         if (log.isDebugEnabled()) {
@@ -212,13 +228,15 @@ public class QueryEngine {
         // - rightConstraints selects just the 'ON' constraints
         // - csInfo has the 'WHERE' constraints
         //
-        // So, in the case of an OUTER JOIN we'll run 2 queries, one with 'ON'
+        // So, in the case of an OUTER JOIN we'll run 2 queries, one with
+        // 'ON'
         // and one with 'ON' + 'WHERE' conditions
         // this way, at merge time in case of an outer join we can tell if
         // it's a 'null' row, or a bad row -> one that must not be returned.
         // This way at the end we'll have:
         // - rightRowsSet containing the 'ON' dataset
-        // - excludingOuterJoinRowsSet: the 'ON' + 'WHERE' condition dataset, or
+        // - excludingOuterJoinRowsSet: the 'ON' + 'WHERE' condition
+        // dataset, or
         // NULL if there is no 'WHERE' condition
 
         long timeJoinRightSide = System.currentTimeMillis();
@@ -227,11 +245,8 @@ public class QueryEngine {
         Comparator<Row> rightCo = new RowPathComparator(
                 merger.getRightSelectors());
 
-        boolean isOuterJoin = JCR_JOIN_TYPE_LEFT_OUTER.equalsIgnoreCase(join
-                .getJoinType());
-
-        Set<Row> rightRows = buildRightRowsJoin(csInfo, rightConstraints, isOuterJoin,
-                rightCo, printIndentation + printIndentStep);
+        Set<Row> rightRows = buildRightRowsJoin(csInfo, rightConstraints,
+                isOuterJoin, rightCo, printIndentation + printIndentStep);
 
         // this has to be initialized as null
         Set<Row> excludingOuterJoinRowsSet = null;
@@ -245,24 +260,13 @@ public class QueryEngine {
             timeJoinRightSide = System.currentTimeMillis() - timeJoinRightSide;
             log.debug(genString(printIndentation)
                     + "SQL2 JOIN RIGHT SIDE took " + timeJoinRightSide
-                    + " ms. fetched" + rightRows.size() + " rows.");
+                    + " ms. fetched " + rightRows.size() + " rows.");
         }
-
-        long timeMergeAndSort = System.currentTimeMillis();
-
         // merge left with right datasets
-        QueryResult result = merger.merge(new RowIteratorAdapter(leftRows),
+        return merger.merge(new RowIteratorAdapter(leftRows),
                 new RowIteratorAdapter(rightRows), excludingOuterJoinRowsSet,
                 rightCo);
-        QueryResult sortedResult = sort(result, orderings, evaluator, offset,
-                limit);
-        if (log.isDebugEnabled()) {
-            timeMergeAndSort = System.currentTimeMillis() - timeMergeAndSort;
-            log.debug(genString(printIndentation)
-                    + "SQL2 JOIN MERGE and SORT took " + timeMergeAndSort
-                    + " ms.");
-        }
-        return sortedResult;
+
     }
 
     private Set<Row> buildLeftRowsJoin(ConstraintSplitInfo csi,
@@ -281,6 +285,7 @@ public class QueryEngine {
                     comparator, printIndentation + printIndentStep));
             return leftRows;
         }
+
         Set<Row> leftRows = new TreeSet<Row>(comparator);
         QueryResult leftResult = execute(null, csi.getSource().getLeft(),
                 csi.getLeftConstraint(), null, 0, -1, printIndentation);
@@ -418,7 +423,7 @@ public class QueryEngine {
         sb.append(csi.getSource());
         sb.append(IOUtils.LINE_SEPARATOR);
         sb.append(genString(printIndentation));
-        sb.append("SQL2 JOIN left constraint: ");
+        sb.append("SQL2 JOIN left constraint:  ");
         sb.append(csi.getLeftConstraint());
         sb.append(IOUtils.LINE_SEPARATOR);
         sb.append(genString(printIndentation));
@@ -441,37 +446,92 @@ public class QueryEngine {
         String[] columnNames = columnMap.keySet().toArray(
                 new String[columnMap.size()]);
 
+        Sort sort = new Sort();
+        if (NATIVE_SORT) {
+            sort = new Sort(createSortFields(orderings, session));
+        }
+
+        // if true it means that the LuceneQueryFactory should just let the
+        // QueryEngine take care of sorting and applying offset and limit
+        // constraints
+        boolean externalSort = !NATIVE_SORT;
+        RowIterator rows = null;
         try {
-            RowIterator rows = new RowIteratorAdapter(lqf.execute(columnMap,
-                    selector, constraint));
-            QueryResult result = new SimpleQueryResult(columnNames,
-                    selectorNames, rows);
-            return sort(result, orderings, evaluator, offset, limit);
+            rows = new RowIteratorAdapter(lqf.execute(columnMap, selector,
+                    constraint, sort, externalSort, offset, limit));
         } catch (IOException e) {
             throw new RepositoryException("Failed to access the query index", e);
         } finally {
-            if (log.isDebugEnabled()) {
-                time = System.currentTimeMillis() - time;
-                log.debug(genString(printIndentation) + "SQL2 SELECT took "
-                        + time + " ms. selector: " + selector
-                        + ", columns: " + Arrays.toString(columnNames)
-                        + ", constraint: " + constraint);
-            }
+            log.debug(
+                    "{}SQL2 SELECT took {} ms. selector: {}, columns: {}, constraint: {}, offset {}, limit {}",
+                    new Object[] { genString(printIndentation),
+                            System.currentTimeMillis() - time, selector,
+                            Arrays.toString(columnNames), constraint, offset,
+                            limit });
         }
+        QueryResult result = new SimpleQueryResult(columnNames, selectorNames,
+                rows);
+        if (NATIVE_SORT) {
+            return result;
+        }
+
+        long timeSort = System.currentTimeMillis();
+        QueryResult sorted = sort(result, orderings, evaluator, offset, limit);
+        log.debug("{}SQL2 SORT took {} ms.", genString(printIndentation),
+                System.currentTimeMillis() - timeSort);
+        return sorted;
     }
 
-    private Map<String, PropertyValue> getColumnMap(
-            Column[] columns, Map<String, NodeType> selectors)
+    public SortField[] createSortFields(Ordering[] orderings, Session session)
             throws RepositoryException {
-        Map<String, PropertyValue> map =
-            new LinkedHashMap<String, PropertyValue>();
+
+        if (orderings == null || orderings.length == 0) {
+            return new SortField[] { SortField.FIELD_SCORE };
+        }
+        // orderings[] -> (property, ordering)
+        Map<String, Ordering> orderByProperties = new HashMap<String, Ordering>();
+        for (Ordering o : orderings) {
+            final String p = o.toString();
+            if (!orderByProperties.containsKey(p)) {
+                orderByProperties.put(p, o);
+            }
+        }
+        final DynamicOperandFieldComparatorSource dofcs = new DynamicOperandFieldComparatorSource(
+                session, evaluator, orderByProperties);
+
+        List<SortField> sortFields = new ArrayList<SortField>();
+
+        // as it turn out, orderByProperties.keySet() doesn't keep the original
+        // insertion order
+        for (Ordering o : orderings) {
+            final String p = o.toString();
+            // order on jcr:score does not use the natural order as
+            // implemented in lucene. score ascending in lucene means that
+            // higher scores are first. JCR specs that lower score values
+            // are first.
+            boolean isAsc = QueryObjectModelConstants.JCR_ORDER_ASCENDING
+                    .equals(o.getOrder());
+            if (JcrConstants.JCR_SCORE.equals(p)) {
+                sortFields.add(new SortField(null, SortField.SCORE, !isAsc));
+            } else {
+                // TODO use native sort if available
+                sortFields.add(new SortField(p, dofcs, isAsc));
+            }
+        }
+        return sortFields.toArray(new SortField[sortFields.size()]);
+    }
+
+    private Map<String, PropertyValue> getColumnMap(Column[] columns,
+            Map<String, NodeType> selectors) throws RepositoryException {
+        Map<String, PropertyValue> map = new LinkedHashMap<String, PropertyValue>();
         if (columns != null && columns.length > 0) {
             for (int i = 0; i < columns.length; i++) {
                 String name = columns[i].getColumnName();
                 if (name != null) {
-                    map.put(name, qomFactory.propertyValue(
-                            columns[i].getSelectorName(),
-                            columns[i].getPropertyName()));
+                    map.put(name,
+                            qomFactory.propertyValue(
+                                    columns[i].getSelectorName(),
+                                    columns[i].getPropertyName()));
                 } else {
                     String selector = columns[i].getSelectorName();
                     map.putAll(getColumnMap(selector, selectors.get(selector)));
@@ -479,17 +539,15 @@ public class QueryEngine {
             }
         } else {
             for (Map.Entry<String, NodeType> selector : selectors.entrySet()) {
-                map.putAll(getColumnMap(
-                        selector.getKey(), selector.getValue()));
+                map.putAll(getColumnMap(selector.getKey(), selector.getValue()));
             }
         }
         return map;
     }
 
-    private Map<String, PropertyValue> getColumnMap(
-            String selector, NodeType type) throws RepositoryException {
-        Map<String, PropertyValue> map =
-            new LinkedHashMap<String, PropertyValue>();
+    private Map<String, PropertyValue> getColumnMap(String selector,
+            NodeType type) throws RepositoryException {
+        Map<String, PropertyValue> map = new LinkedHashMap<String, PropertyValue>();
         for (PropertyDefinition definition : type.getPropertyDefinitions()) {
             String name = definition.getName();
             if (!definition.isMultiple() && !"*".equals(name)) {
@@ -505,8 +563,8 @@ public class QueryEngine {
             throws RepositoryException {
         if (source instanceof Selector) {
             Selector selector = (Selector) source;
-            return Collections.singletonMap(
-                    selector.getSelectorName(), getNodeType(selector));
+            return Collections.singletonMap(selector.getSelectorName(),
+                    getNodeType(selector));
         } else if (source instanceof Join) {
             Join join = (Join) source;
             Map<String, NodeType> map = new LinkedHashMap<String, NodeType>();
@@ -529,23 +587,28 @@ public class QueryEngine {
     }
 
     /**
-     * Sorts the given query results according to the given QOM orderings.
-     * If one or more orderings have been specified, this method will iterate
+     * Sorts the given query results according to the given QOM orderings. If
+     * one or more orderings have been specified, this method will iterate
      * through the entire original result set, order the collected rows, and
      * return a new result set based on the sorted collection of rows.
-     *
-     * @param result original query results
-     * @param orderings QOM orderings
-     * @param offset result offset
-     * @param limit result limit
+     * 
+     * @param result
+     *            original query results
+     * @param orderings
+     *            QOM orderings
+     * @param offset
+     *            result offset
+     * @param limit
+     *            result limit
      * @return sorted query results
-     * @throws RepositoryException if the results can not be sorted
+     * @throws RepositoryException
+     *             if the results can not be sorted
      */
     protected static QueryResult sort(QueryResult result,
             final Ordering[] orderings, OperandEvaluator evaluator,
             long offset, long limit) throws RepositoryException {
-        if ((orderings != null && orderings.length > 0)
-                || offset != 0 || limit >= 0) {
+        if ((orderings != null && orderings.length > 0) || offset != 0
+                || limit >= 0) {
             List<Row> rows = new ArrayList<Row>();
 
             RowIterator iterator = result.getRows();
@@ -566,9 +629,8 @@ public class QueryEngine {
                 rows = rows.subList(0, (int) Math.min(limit, size));
             }
 
-            return new SimpleQueryResult(
-                    result.getColumnNames(), result.getSelectorNames(),
-                    new RowIteratorAdapter(rows));
+            return new SimpleQueryResult(result.getColumnNames(),
+                    result.getSelectorNames(), new RowIteratorAdapter(rows));
         } else {
             return result;
         }

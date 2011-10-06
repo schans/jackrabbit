@@ -22,6 +22,7 @@ import javax.jcr.UnsupportedRepositoryOperationException;
 import javax.jcr.version.VersionException;
 
 import org.apache.jackrabbit.jcr2spi.state.ItemState;
+import org.apache.jackrabbit.jcr2spi.state.ItemStateValidator;
 import org.apache.jackrabbit.jcr2spi.state.NodeState;
 import org.apache.jackrabbit.spi.ItemId;
 import org.slf4j.Logger;
@@ -30,15 +31,25 @@ import org.slf4j.LoggerFactory;
 /**
  * <code>Remove</code>...
  */
-public class Remove extends AbstractOperation {
+public class Remove extends TransientOperation {
 
     private static Logger log = LoggerFactory.getLogger(Remove.class);
+
+    private static final int REMOVE_OPTIONS =
+            ItemStateValidator.CHECK_LOCK
+            | ItemStateValidator.CHECK_VERSIONING
+            | ItemStateValidator.CHECK_CONSTRAINTS;
 
     private final ItemId removeId;
     protected ItemState removeState;
     protected NodeState parent;
 
-    protected Remove(ItemState removeState, NodeState parent) throws RepositoryException {
+    private Remove(ItemState removeState, NodeState parent) throws RepositoryException {
+        this(removeState, parent, REMOVE_OPTIONS);
+    }
+
+    private Remove(ItemState removeState, NodeState parent, int options) throws RepositoryException {
+        super(options);
         this.removeId = removeState.getId();
         this.removeState = removeState;
         this.parent = parent;

@@ -173,7 +173,7 @@ public class JcrVersionManager implements javax.jcr.version.VersionManager {
     public void restore(String absPath, Version version, boolean removeExisting) throws PathNotFoundException, ItemExistsException, VersionException, ConstraintViolationException, UnsupportedRepositoryOperationException, LockException, InvalidItemStateException, RepositoryException {
         session.checkIsAlive();
         // get parent
-        int idx = absPath.lastIndexOf("/");
+        int idx = absPath.lastIndexOf('/');
         String parent = idx == 0 ? "/" : absPath.substring(0, idx);
         String name = absPath.substring(idx + 1);
         Node n = itemManager.getNode(resolver.getQPath(parent));
@@ -334,7 +334,7 @@ public class JcrVersionManager implements javax.jcr.version.VersionManager {
      * after successful completion of the operation must reside within scope
      * defined by this session.
      * <br>
-     * In addition this method varifies that the passed node is of type nt:activity.
+     * In addition this method verifies that the passed node is of type nt:activity.
      *
      * @param activityNode
      * @param methodName

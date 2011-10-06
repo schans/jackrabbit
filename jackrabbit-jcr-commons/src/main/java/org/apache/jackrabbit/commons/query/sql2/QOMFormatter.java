@@ -234,13 +234,13 @@ public class QOMFormatter implements QueryObjectModelConstants {
                 appendCastLiteral(v.getString(), "DATE");
                 break;
             case PropertyType.DECIMAL:
-                append(v.getString());
+                appendCastLiteral(v.getString(), "DECIMAL");
                 break;
             case PropertyType.DOUBLE:
-                append(v.getString());
+                appendCastLiteral(v.getString(), "DOUBLE");
                 break;
             case PropertyType.LONG:
-                append(v.getString());
+                appendCastLiteral(v.getString(), "LONG");
                 break;
             case PropertyType.NAME:
                 appendCastLiteral(v.getString(), "NAME");
@@ -508,8 +508,15 @@ public class QOMFormatter implements QueryObjectModelConstants {
         if (isSimpleName(path)) {
             append(path);
         } else {
+            boolean needQuotes = path.contains(" ");
             append("[");
+            if (needQuotes) {
+                append("'");
+            }
             append(path);
+            if (needQuotes) {
+                append("'");
+            }
             append("]");
         }
     }

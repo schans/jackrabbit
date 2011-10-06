@@ -116,8 +116,7 @@ public class SessionImpl extends AbstractSession
      * Listeners (weak references)
      */
     @SuppressWarnings("unchecked")
-    private final Map<SessionListener, SessionListener> listeners
-            = new ReferenceMap(ReferenceMap.WEAK, ReferenceMap.WEAK);
+    private final Map<SessionListener, SessionListener> listeners = new ReferenceMap(ReferenceMap.WEAK, ReferenceMap.WEAK);
 
     private final Repository repository;
     private final RepositoryConfig config;
@@ -498,6 +497,8 @@ public class SessionImpl extends AbstractSession
      * @see Session#getAccessControlManager()
      */
     public AccessControlManager getAccessControlManager() throws RepositoryException {
+        checkSupportedOption(Repository.OPTION_ACCESS_CONTROL_SUPPORTED);
+
         // TODO: implementation missing
         throw new UnsupportedRepositoryOperationException("JCR-1104");
     }
@@ -544,6 +545,8 @@ public class SessionImpl extends AbstractSession
      */
     public RetentionManager getRetentionManager()
             throws UnsupportedRepositoryOperationException, RepositoryException {
+        checkSupportedOption(Repository.OPTION_RETENTION_SUPPORTED);
+        
         // TODO: implementation missing
         throw new UnsupportedRepositoryOperationException("JCR-1104");
     }
@@ -676,9 +679,9 @@ public class SessionImpl extends AbstractSession
     private void notifyLoggingOut() {
         // copy listeners to array to avoid ConcurrentModificationException
         SessionListener[] la = listeners.values().toArray(new SessionListener[listeners.size()]);
-        for (int i = 0; i < la.length; i++) {
-            if (la[i] != null) {
-                la[i].loggingOut(this);
+        for (SessionListener sl : la) {
+            if (sl != null) {
+                sl.loggingOut(this);
             }
         }
     }
@@ -689,9 +692,9 @@ public class SessionImpl extends AbstractSession
     private void notifyLoggedOut() {
         // copy listeners to array to avoid ConcurrentModificationException
         SessionListener[] la = listeners.values().toArray(new SessionListener[listeners.size()]);
-        for (int i = 0; i < la.length; i++) {
-            if (la[i] != null) {
-                la[i].loggedOut(this);
+        for (SessionListener sl : la) {
+            if (sl != null) {
+                sl.loggedOut(this);
             }
         }
     }
@@ -951,11 +954,28 @@ public class SessionImpl extends AbstractSession
      * <ul>
      * <li>{@link Repository#LEVEL_1_SUPPORTED}</li>
      * <li>{@link Repository#LEVEL_2_SUPPORTED}</li>
-     * <li>{@link Repository#OPTION_TRANSACTIONS_SUPPORTED}</li>
-     * <li>{@link Repository#OPTION_VERSIONING_SUPPORTED}</li>
-     * <li>{@link Repository#OPTION_OBSERVATION_SUPPORTED}</li>
+     * <li>{@link Repository#OPTION_ACCESS_CONTROL_SUPPORTED}</li>
+     * <li>{@link Repository#OPTION_ACTIVITIES_SUPPORTED}</li>
+     * <li>{@link Repository#OPTION_BASELINES_SUPPORTED}</li>
+     * <li>{@link Repository#OPTION_JOURNALED_OBSERVATION_SUPPORTED}</li>
+     * <li>{@link Repository#OPTION_LIFECYCLE_SUPPORTED}</li>
      * <li>{@link Repository#OPTION_LOCKING_SUPPORTED}</li>
+     * <li>{@link Repository#OPTION_NODE_AND_PROPERTY_WITH_SAME_NAME_SUPPORTED}</li>
+     * <li>{@link Repository#OPTION_NODE_TYPE_MANAGEMENT_SUPPORTED}</li>
+     * <li>{@link Repository#OPTION_OBSERVATION_SUPPORTED}</li>
      * <li>{@link Repository#OPTION_QUERY_SQL_SUPPORTED}</li>
+     * <li>{@link Repository#OPTION_RETENTION_SUPPORTED}</li>
+     * <li>{@link Repository#OPTION_SHAREABLE_NODES_SUPPORTED}</li>
+     * <li>{@link Repository#OPTION_SIMPLE_VERSIONING_SUPPORTED}</li>
+     * <li>{@link Repository#OPTION_TRANSACTIONS_SUPPORTED}</li>
+     * <li>{@link Repository#OPTION_UNFILED_CONTENT_SUPPORTED}</li>
+     * <li>{@link Repository#OPTION_UPDATE_MIXIN_NODE_TYPES_SUPPORTED}</li>
+     * <li>{@link Repository#OPTION_UPDATE_PRIMARY_NODE_TYPE_SUPPORTED}</li>
+     * <li>{@link Repository#OPTION_VERSIONING_SUPPORTED}</li>
+     * <li>{@link Repository#OPTION_WORKSPACE_MANAGEMENT_SUPPORTED}</li>
+     * <li>{@link Repository#OPTION_XML_EXPORT_SUPPORTED}</li>
+     * <li>{@link Repository#OPTION_XML_IMPORT_SUPPORTED}</li>
+     * <li>{@link Repository#WRITE_SUPPORTED}</li>
      * </ul>
      * @throws UnsupportedRepositoryOperationException
      * @throws RepositoryException
@@ -1026,7 +1046,7 @@ public class SessionImpl extends AbstractSession
          */
         public void checkFormat(String identifier) throws MalformedPathException {
             try {
-                NodeId id = getIdFactory().fromJcrIdentifier(identifier);
+                getIdFactory().fromJcrIdentifier(identifier);
             } catch (Exception e) {
                 throw new MalformedPathException("Invalid identifier '" + identifier + "'.");
             }
