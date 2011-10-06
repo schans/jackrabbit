@@ -125,8 +125,10 @@ public class ConcurrentCache<K, V> extends AbstractCache {
         synchronized (segment) {
             E<V> entry = segment.get(key);
             if (entry != null) {
+                recordCacheHit();
                 return entry.value;
             } else {
+                recordCacheMiss();
                 return null;
             }
         }
@@ -162,6 +164,7 @@ public class ConcurrentCache<K, V> extends AbstractCache {
      * @return the previous value, or <code>null</code>
      */
     public V put(K key, V value, long size) {
+        recordCachePut();
         E<V> previous;
 
         Map<K, E<V>> segment = getSegment(key);
@@ -252,6 +255,14 @@ public class ConcurrentCache<K, V> extends AbstractCache {
                 }
             }
         }
+    }
+
+    public long getElementCount() {
+        long count = 0;
+        for (int i = 0; i < segments.length; i++) {
+            count += segments[i].size();
+        }
+        return count;
     }
 
     @Override

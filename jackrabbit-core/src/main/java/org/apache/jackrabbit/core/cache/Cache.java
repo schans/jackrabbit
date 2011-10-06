@@ -45,7 +45,6 @@ public interface Cache {
      * Get the number of accesses (get or set) until resetAccessCount was called.
      * @return the count
      */
-
     long getAccessCount();
 
     /**
@@ -53,6 +52,30 @@ public interface Cache {
      */
     void resetAccessCount();
 
+    /**
+     * Get the number of cache hits.
+     * @return the number of hits
+     */
+    long getHitCount();
+
+    /**
+     * Get the number of cache misses.
+     * @return the number of misses
+     */
+    long getMissCount();
+
+    /**
+     * Get the number of cache puts.
+     * @return the number of puts
+     */
+    long getPutCount();
+
+    /**
+     * Get the number of elements/objects in the cache.
+     * @return the number of elements
+     */
+    long getElementCount();
+    
     /**
      * Add a listener to this cache that is informed after a number of accesses.
      */

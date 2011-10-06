@@ -65,6 +65,21 @@ public abstract class AbstractCache implements Cache {
     private final AtomicLong accessCount = new AtomicLong();
 
     /**
+     * Cache put counter.
+     */
+    private final AtomicLong putCount = new AtomicLong();
+
+    /**
+     * Cache hit counter.
+     */
+    private final AtomicLong hitCount = new AtomicLong();
+
+    /**
+     * Cache miss counter.
+     */
+    private final AtomicLong missCount = new AtomicLong();
+
+    /**
      * Cache access listener. Set in the
      * {@link #setAccessListener(CacheAccessListener)} method and accessed
      * by periodically by the {@link #recordCacheAccess()} method.
@@ -107,12 +122,36 @@ public abstract class AbstractCache implements Cache {
         }
     }
 
+    protected void recordCachePut() {
+        putCount.incrementAndGet();
+    }
+
+    protected void recordCacheHit() {
+        hitCount.incrementAndGet();
+    }
+
+    protected void recordCacheMiss() {
+        missCount.incrementAndGet();
+    }
+
     public long getAccessCount() {
         return accessCount.get();
     }
 
     public void resetAccessCount() {
         accessCount.set(0);
+    }
+
+    public long getPutCount() {
+        return putCount.get();
+    }
+
+    public long getHitCount() {
+        return hitCount.get();
+    }
+
+    public long getMissCount() {
+        return missCount.get();
     }
 
     public long getMemoryUsed() {
