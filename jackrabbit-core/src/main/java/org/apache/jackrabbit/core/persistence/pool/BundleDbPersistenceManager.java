@@ -35,6 +35,7 @@ import javax.jcr.RepositoryException;
 import javax.sql.DataSource;
 
 import org.apache.commons.io.IOUtils;
+import org.apache.jackrabbit.core.cache.Cache;
 import org.apache.jackrabbit.core.fs.FileSystem;
 import org.apache.jackrabbit.core.fs.FileSystemResource;
 import org.apache.jackrabbit.core.fs.local.LocalFileSystem;
@@ -1453,5 +1454,6 @@ public class BundleDbPersistenceManager
             // owning BundleDbPersistenceManager
         }
     }
+
 
 }

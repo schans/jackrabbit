@@ -54,6 +54,9 @@ public class CacheManager implements CacheAccessListener {
     /** The default minimum resize interval (in ms). */
     private static final int DEFAULT_MIN_RESIZE_INTERVAL = 1000;
 
+    /** The default minimum stats logging interval (in ms). */
+    private static final int DEFAULT_LOG_STATS_INTERVAL = 60 * 1000;
+
     /** The size of a big object, to detect if a cache is full or not. */
     private static final int BIG_OBJECT_SIZE = 16 * 1024;
 
@@ -77,9 +80,19 @@ public class CacheManager implements CacheAccessListener {
             "org.apache.jackrabbit.cacheResizeInterval",
             DEFAULT_MIN_RESIZE_INTERVAL);
 
-        /** The last time the caches where resized. */
+    /** The minimum interval time between stats are logged */
+    private long minLogStatsInterval = Long.getLong(
+            "org.apache.jackrabbit.cacheLogStatsInterval",
+            DEFAULT_LOG_STATS_INTERVAL);
+
+    /** The last time the caches where resized. */
     private volatile long nextResize =
         System.currentTimeMillis() + DEFAULT_MIN_RESIZE_INTERVAL;
+
+
+    /** The last time the cache stats were logged. */
+    private volatile long nextLogStats =
+            System.currentTimeMillis() + DEFAULT_LOG_STATS_INTERVAL;
 
 
     public long getMaxMemory() {
@@ -119,6 +132,9 @@ public class CacheManager implements CacheAccessListener {
      * Resize the caches if required.
      */
     public void cacheAccessed() {
+
+        logCacheStats();
+        
         long now = System.currentTimeMillis();
         if (now < nextResize) {
             return;
@@ -135,6 +151,24 @@ public class CacheManager implements CacheAccessListener {
         }
     }
 
+    /**
+     * Log info about the caches.
+     */
+    private void logCacheStats() {
+        if (log.isInfoEnabled()) {
+            long now = System.currentTimeMillis();
+            if (now < nextLogStats) {
+                return;
+            }
+            for (Cache cache : caches.keySet()) {
+                long u = cache.getMemoryUsed() / 1024;
+                long m = cache.getMaxMemorySize() / 1024;
+                log.info("name=" + cache + " num=" + cache.getElementCount() + " mem=" + u + "k max=" + m + "k hits="
+                        + cache.getHitCount() + " miss=" + cache.getMissCount() + " puts=" + cache.getPutCount());
+            }
+            nextLogStats = now + minLogStatsInterval;
+        }
+    }
     /**
      * Re-calcualte the maximum memory for each cache, and set the new limits.
      */
@@ -211,6 +245,7 @@ public class CacheManager implements CacheAccessListener {
                 log.debug(cache + " now:" + cache.getMaxMemorySize() + " used:"
                         + info.getMemoryUsed() + " access:" + info.getAccessCount()
                         + " new:" + info.getMemory());
+
             }
             cache.setMaxMemorySize(info.getMemory());
         }
