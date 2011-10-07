@@ -393,6 +393,7 @@ public abstract class AbstractBundlePersistenceManager implements
         // init bundle cache
         bundles = new ConcurrentCache<NodeId, NodePropBundle>(context.getHomeDir().getName() + "BundleCache");
         bundles.setMaxMemorySize(bundleCacheSize);
+        bundles.setAccessListener(this);
     }
 
     /**
