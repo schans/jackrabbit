@@ -33,7 +33,7 @@
 
   <artifactId>jackrabbit-parent</artifactId>
   <name>Jackrabbit Parent POM</name>
-  <version>2.2.9-hx</version>
+  <version>2.2.9-h7</version>
   <packaging>pom</packaging>
   <issueManagement>
     <system>Jira</system>
