@@ -30,7 +30,6 @@ import javax.jcr.query.qom.Ordering;
 import javax.jcr.query.qom.QueryObjectModel;
 import javax.jcr.query.qom.Source;
 
-import org.apache.jackrabbit.api.stats.QueryStat;
 import org.apache.jackrabbit.commons.query.QueryObjectModelBuilderRegistry;
 import org.apache.jackrabbit.core.query.lucene.LuceneQueryFactory;
 import org.apache.jackrabbit.core.query.lucene.SearchIndex;
@@ -122,11 +121,8 @@ public class QueryObjectModelImpl extends QueryImpl implements QueryObjectModel 
         long time = System.currentTimeMillis();
         QueryResult qr = engine.execute(getColumns(), getSource(),
                 getConstraint(), getOrderings(), offset, limit);
-        final QueryStat queryStat = sessionContext.getRepositoryContext()
-                .getStatManager().getQueryStat();
-        if (queryStat.isEnabled() || log.isDebugEnabled()) {
+        if (log.isDebugEnabled()) {
             time = System.currentTimeMillis() - time;
-            queryStat.logQuery(language, statement, time);
             log.debug("executed in {} ms. ({})", time, statement);
         }
         return qr;

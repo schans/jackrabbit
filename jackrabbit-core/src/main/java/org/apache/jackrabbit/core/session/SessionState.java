@@ -22,7 +22,6 @@ import java.util.concurrent.locks.ReentrantLock;
 import javax.jcr.RepositoryException;
 import javax.jcr.Session;
 
-import org.apache.jackrabbit.api.stats.CoreStat;
 import org.apache.jackrabbit.core.WorkspaceManager;
 import org.apache.jackrabbit.core.observation.ObservationDispatcher;
 import org.slf4j.Logger;
@@ -181,16 +180,14 @@ public class SessionState {
             }
 
             try {
-                final CoreStat coreStat = context.getRepositoryContext().getStatManager().getCoreStat();
                 // Perform the actual operation, optionally with debug logs
-                if (log.isDebugEnabled() || coreStat.isEnabled()) {
+                if (log.isDebugEnabled()) {
                     log.debug("Performing {}", operation);
                     long start = System.nanoTime();
                     try {
                         return operation.perform(context);
                     } finally {
                         long time = System.nanoTime() - start;
-                        coreStat.onSessionOperation(isWriteOperation, time);
                         if (time > NS_PER_MS) {
                             log.debug("Performed {} in {}ms",
                                     operation, time / NS_PER_MS);

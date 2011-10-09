@@ -101,7 +101,6 @@ import org.apache.jackrabbit.core.state.ISMLocking;
 import org.apache.jackrabbit.core.state.ItemStateException;
 import org.apache.jackrabbit.core.state.ManagedMLRUItemStateCacheFactory;
 import org.apache.jackrabbit.core.state.SharedItemStateManager;
-import org.apache.jackrabbit.core.stats.StatManager;
 import org.apache.jackrabbit.core.util.RepositoryLockMechanism;
 import org.apache.jackrabbit.core.version.InternalVersionManager;
 import org.apache.jackrabbit.core.version.InternalVersionManagerImpl;
@@ -229,11 +228,6 @@ public class RepositoryImpl extends AbstractRepository
     private final CacheManager cacheMgr = new CacheManager();
 
     /**
-     * The Statistics manager, handles statistics and jmx support
-     */
-    private final StatManager statManager = new StatManager();
-
-    /**
      * Chanel for posting create workspace messages.
      */
     private WorkspaceEventChannel createWorkspaceEventChannel;
@@ -325,9 +319,6 @@ public class RepositoryImpl extends AbstractRepository
 
             // initialize system search manager
             getSystemSearchManager(repConfig.getDefaultWorkspaceName());
-
-            //this has to be live before initSecurityManager(), to be able to track all the queries
-            initStatManager();
 
             // Initialise the security manager;
             initSecurityManager();
@@ -433,10 +424,6 @@ public class RepositoryImpl extends AbstractRepository
      */
     public CacheManager getCacheManager() {
         return cacheMgr;
-    }
-
-    public StatManager getStatManager() {
-        return statManager;
     }
 
     /**
@@ -980,7 +967,6 @@ public class RepositoryImpl extends AbstractRepository
             session.addListener(this);
             activeSessions.put(session, session);
         }
-        statManager.getCoreStat().sessionCreated();
     }
 
     /**
@@ -1168,8 +1154,6 @@ public class RepositoryImpl extends AbstractRepository
                 log.error("failed to release the repository lock", e);
             }
         }
-
-        statManager.stop();
 
         log.info("Repository has been shutdown");
     }
@@ -1431,11 +1415,6 @@ public class RepositoryImpl extends AbstractRepository
         return new GarbageCollector(context.getDataStore(), ipmList, sessions);
     }
 
-    protected void initStatManager() {
-        this.statManager.init();
-        this.context.setStatManager(statManager);
-    }
-
     //-----------------------------------------------------------< Repository >
     /**
      * {@inheritDoc}
@@ -1571,7 +1550,6 @@ public class RepositoryImpl extends AbstractRepository
             // remove session from active sessions
             activeSessions.remove(session);
         }
-        statManager.getCoreStat().sessionLoggedOut();
     }
 
     //------------------------------------------< overridable factory methods >

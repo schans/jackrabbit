@@ -33,7 +33,6 @@ import javax.jcr.query.InvalidQueryException;
 import javax.jcr.query.QueryResult;
 import javax.jcr.version.VersionException;
 
-import org.apache.jackrabbit.api.stats.QueryStat;
 import org.apache.jackrabbit.core.session.SessionContext;
 import org.apache.jackrabbit.core.session.SessionOperation;
 import org.apache.jackrabbit.spi.Path;
@@ -135,12 +134,8 @@ public class QueryImpl extends AbstractQueryImpl {
                     }
                 });
 
-        final QueryStat queryStat = sessionContext.getRepositoryContext()
-                .getStatManager().getQueryStat();
-        if (queryStat.isEnabled() || log.isDebugEnabled()) {
+        if (log.isDebugEnabled()) {
             time = System.currentTimeMillis() - time;
-            sessionContext.getRepositoryContext().getStatManager()
-                    .getQueryStat().logQuery(language, statement, time);
             log.debug("executed in {} ms. ({})", time, statement);
         }
         return result;

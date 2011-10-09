@@ -27,7 +27,6 @@ import org.apache.jackrabbit.core.nodetype.NodeTypeRegistry;
 import org.apache.jackrabbit.core.security.JackrabbitSecurityManager;
 import org.apache.jackrabbit.core.security.authorization.PrivilegeRegistry;
 import org.apache.jackrabbit.core.state.ItemStateCacheFactory;
-import org.apache.jackrabbit.core.stats.StatManager;
 import org.apache.jackrabbit.core.version.InternalVersionManagerImpl;
 
 /**
@@ -106,11 +105,6 @@ public class RepositoryContext {
      */
     private final ScheduledExecutorService executor =
             new JackrabbitThreadPool();
-
-    /**
-     * The Statistics manager, handles statistics and jmx support
-     */
-    private StatManager statManager;
 
     /**
      * Creates a component context for the given repository.
@@ -367,13 +361,4 @@ public class RepositoryContext {
         return nodeIdFactory;
     }
 
-    public StatManager getStatManager() {
-        assert statManager != null;
-        return statManager;
-    }
-
-    public void setStatManager(StatManager statManager) {
-        assert statManager != null;
-        this.statManager = statManager;
-    }
 }
