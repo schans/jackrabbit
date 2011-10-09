@@ -140,12 +140,12 @@ public class JcrUtils {
         if (parameters != null
                 && parameters.containsKey(JcrUtils.REPOSITORY_URI)) {
             String uri = parameters.get(JcrUtils.REPOSITORY_URI);
-            Map<String, String> copy = new HashMap<String, String>(parameters);
             try {
                 URI u = new URI(uri);
                 String query = u.getRawQuery();
                 if (query != null) {
-                    for (String entry : query.split("&")) {
+                   Map<String, String> copy = new HashMap<String, String>(parameters);
+                   for (String entry : query.split("&")) {
                         int i = entry.indexOf('=');
                         if (i != -1) {
                             copy.put(
@@ -168,9 +168,9 @@ public class JcrUtils {
                 log.append(newline);
                 log.append("Note that the given repository URI was invalid:");
                 log.append(newline);
-                log.append("        " + uri);
+                log.append("        ").append(uri);
                 log.append(newline);
-                log.append("        " + e.getMessage());
+                log.append("        ").append(e.getMessage());
             } catch (UnsupportedEncodingException e) {
                 throw new RepositoryException("UTF-8 is not supported!", e);
             }
