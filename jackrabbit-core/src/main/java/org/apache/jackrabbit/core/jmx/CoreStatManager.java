@@ -14,7 +14,10 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.jackrabbit.core.jmx.core;
+package org.apache.jackrabbit.core.jmx;
+
+import org.apache.jackrabbit.api.jmx.CoreStatManagerMBean;
+import org.apache.jackrabbit.api.stats.CoreStat;
 
 /**
  * The CoreStatManagerMBean default implementation

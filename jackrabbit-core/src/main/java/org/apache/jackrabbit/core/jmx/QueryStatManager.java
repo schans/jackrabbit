@@ -14,7 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.jackrabbit.core.jmx.query;
+package org.apache.jackrabbit.core.jmx;
 
 import java.util.Arrays;
 import java.util.Collections;
@@ -28,6 +28,11 @@ import javax.management.openmbean.SimpleType;
 import javax.management.openmbean.TabularData;
 import javax.management.openmbean.TabularDataSupport;
 import javax.management.openmbean.TabularType;
+
+import org.apache.jackrabbit.api.jmx.QueryStatManagerMBean;
+import org.apache.jackrabbit.api.stats.QueryStat;
+import org.apache.jackrabbit.api.stats.QueryStatDto;
+import org.apache.jackrabbit.core.stats.QueryStatDtoComparator;
 
 /**
  * The QueryStatManagerMBean default implementation

@@ -14,24 +14,26 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.jackrabbit.core.jmx.query;
+package org.apache.jackrabbit.api.jmx;
+
+import javax.management.openmbean.TabularData;
+
+import org.apache.jackrabbit.api.stats.QueryStat;
 
 /**
- * Statistics on query operations
+ * JMX Bindings for {@link QueryStat}.
  * 
  */
-public interface QueryStat {
+public interface QueryStatManagerMBean {
 
-    void logQuery(final String language, final String statement, long duration);
+    String NAME = "org.apache.jackrabbit:type=QueryStats";
 
-    /** Slowest Queries */
-
-    QueryStatDto[] getSlowQueries();
+    TabularData getQueries();
 
     /**
      * @return how big the <b>Top X</b> queue is
      */
-    int getSlowQueriesQueueSize();
+    int getQueueSize();
 
     /**
      * Change the <b>Top X</b> queue size
@@ -39,36 +41,10 @@ public interface QueryStat {
      * @param size
      *            the new size
      */
-    void setSlowQueriesQueueSize(int size);
+    void setQueueSize(int size);
 
     /**
      * clears the queue
      */
-    void clearSlowQueriesQueue();
-
-    double getQueriesPerSecond();
-
-    double getAvgQueryTime();
-
-    /** Generic Stats Stuff */
-
-    /**
-     * If this service is currently registering stats
-     * 
-     * @return <code>true</code> if the service is enabled
-     */
-    boolean isEnabled();
-
-    /**
-     * Enables/Disables the service
-     * 
-     * @param enabled
-     */
-    void setEnabled(boolean enabled);
-
-    /**
-     * clears all data
-     */
-    void reset();
-
+    void clearQueue();
 }

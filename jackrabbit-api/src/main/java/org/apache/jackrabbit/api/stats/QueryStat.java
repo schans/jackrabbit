@@ -14,35 +14,43 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.jackrabbit.core.jmx.core;
+package org.apache.jackrabbit.api.stats;
 
 /**
- * Statistics on core JCR operations
+ * Statistics on query operations
  * 
  */
-public interface CoreStat {
+public interface QueryStat {
 
-    /** -- SESSION INFO -- **/
+    void logQuery(final String language, final String statement, long duration);
 
-    void sessionCreated();
+    /** Slowest Queries */
 
-    void sessionLoggedOut();
-
-    long getNumberOfSessions();
-
-    void resetNumberOfSessions();
+    QueryStatDto[] getSlowQueries();
 
     /**
-     * @param timeNs
-     *            as given by timeNs = System.nanoTime() - timeNs;
+     * @return how big the <b>Top X</b> queue is
      */
-    void onSessionOperation(boolean isWrite, long timeNs);
+    int getSlowQueriesQueueSize();
 
-    double getReadOpsPerSecond();
+    /**
+     * Change the <b>Top X</b> queue size
+     * 
+     * @param size
+     *            the new size
+     */
+    void setSlowQueriesQueueSize(int size);
 
-    double getWriteOpsPerSecond();
+    /**
+     * clears the queue
+     */
+    void clearSlowQueriesQueue();
 
-    void resetNumberOfOperations();
+    double getQueriesPerSecond();
+
+    double getAvgQueryTime();
+
+    /** Generic Stats Stuff */
 
     /**
      * If this service is currently registering stats

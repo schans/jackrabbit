@@ -14,37 +14,24 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.jackrabbit.core.jmx.query;
-
-import javax.management.openmbean.TabularData;
-
-import org.apache.jackrabbit.core.jmx.JackrabbitBaseMBean;
+package org.apache.jackrabbit.api.jmx;
 
 /**
- * JMX Bindings for {@link QueryStat}.
+ * The CoreStatManagerMBean exposes the CoreStat info via JMX
  * 
  */
-public interface QueryStatManagerMBean extends JackrabbitBaseMBean {
+public interface CoreStatManagerMBean {
 
-    String NAME = DOMAIN + ":type=QueryStats";
+    String NAME = "org.apache.jackrabbit:type=CoreStats";
 
-    TabularData getQueries();
+    long getNumberOfSessions();
 
-    /**
-     * @return how big the <b>Top X</b> queue is
-     */
-    int getQueueSize();
+    void resetNumberOfSessions();
 
-    /**
-     * Change the <b>Top X</b> queue size
-     * 
-     * @param size
-     *            the new size
-     */
-    void setQueueSize(int size);
+    double getReadOpsPerSecond();
 
-    /**
-     * clears the queue
-     */
-    void clearQueue();
+    double getWriteOpsPerSecond();
+
+    void resetNumberOfOperations();
+
 }

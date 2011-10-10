@@ -14,12 +14,14 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.jackrabbit.core.jmx.query;
+package org.apache.jackrabbit.core.stats;
 
 import java.util.Comparator;
 import java.util.PriorityQueue;
 
-import org.apache.jackrabbit.core.jmx.util.CachingOpsPerSecondDto;
+import org.apache.jackrabbit.api.stats.QueryStat;
+import org.apache.jackrabbit.api.stats.QueryStatDto;
+import org.apache.jackrabbit.core.stats.util.CachingOpsPerSecondDto;
 
 /**
  * Default {@link QueryStat} implementation
@@ -66,7 +68,7 @@ public class QueryStatImpl implements QueryStat {
         if (!enabled) {
             return;
         }
-        queries.add(new QueryStatDto(language, statement, duration));
+        queries.add(new QueryStatDtoImpl(language, statement, duration));
         if (queries.size() > queueSize) {
             queries.remove();
         }

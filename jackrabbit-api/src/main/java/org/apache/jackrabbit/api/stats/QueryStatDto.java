@@ -14,20 +14,26 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.jackrabbit.core.jmx.registry;
+package org.apache.jackrabbit.api.stats;
 
-import org.apache.jackrabbit.core.jmx.JackrabbitBaseMBean;
+import java.io.Serializable;
 
 /**
- * JmxRegistry JMX MBean public operations
+ * Object that holds statistical info about a query.
  * 
  */
-public interface JmxRegistryManagerMBean extends JackrabbitBaseMBean {
+public interface QueryStatDto extends Serializable {
 
-    String NAME = DOMAIN + ":type=DynamicRegistry";
+    long getDuration();
 
-    void enableCoreStatJmx();
+    String getLanguage();
 
-    void enableQueryStatJmx();
+    String getStatement();
+
+    String getCreationTime();
+
+    long getPosition();
+
+    void setPosition(long position);
 
 }

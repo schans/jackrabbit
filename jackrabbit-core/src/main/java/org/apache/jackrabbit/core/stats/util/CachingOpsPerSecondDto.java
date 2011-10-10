@@ -14,7 +14,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.jackrabbit.core.jmx.util;
+package org.apache.jackrabbit.core.stats.util;
 
 import java.math.BigDecimal;
 import java.math.MathContext;

@@ -14,11 +14,12 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.jackrabbit.core.jmx.core;
+package org.apache.jackrabbit.core.stats;
 
 import java.util.concurrent.atomic.AtomicLong;
 
-import org.apache.jackrabbit.core.jmx.util.CachingOpsPerSecondDto;
+import org.apache.jackrabbit.api.stats.CoreStat;
+import org.apache.jackrabbit.core.stats.util.CachingOpsPerSecondDto;
 
 /**
  * Default CoreStat impl

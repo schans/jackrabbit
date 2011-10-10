@@ -14,17 +14,18 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.jackrabbit.core.jmx.query;
+package org.apache.jackrabbit.core.stats;
 
-import java.io.Serializable;
 import java.util.Calendar;
 import java.util.Date;
+
+import org.apache.jackrabbit.api.stats.QueryStatDto;
 
 /**
  * Object that holds statistical info about a query.
  * 
  */
-public class QueryStatDto implements Serializable {
+public class QueryStatDtoImpl implements QueryStatDto {
 
     private static final long serialVersionUID = 1L;
 
@@ -53,7 +54,7 @@ public class QueryStatDto implements Serializable {
      */
     private final String statement;
 
-    public QueryStatDto(final String language, final String statement,
+    public QueryStatDtoImpl(final String language, final String statement,
             long duration) {
         this.duration = duration;
         this.language = language;

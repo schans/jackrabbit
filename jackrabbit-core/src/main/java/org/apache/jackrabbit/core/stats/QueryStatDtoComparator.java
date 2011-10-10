@@ -14,26 +14,18 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.jackrabbit.core.jmx.core;
+package org.apache.jackrabbit.core.stats;
 
-import org.apache.jackrabbit.core.jmx.JackrabbitBaseMBean;
+import java.util.Comparator;
+
+import org.apache.jackrabbit.api.stats.QueryStatDto;
 
 /**
- * The CoreStatManagerMBean exposes the CoreStat info via JMX
+ * QueryStatDto comparator by duration
  * 
  */
-public interface CoreStatManagerMBean extends JackrabbitBaseMBean {
-
-    String NAME = DOMAIN + ":type=CoreStats";
-
-    long getNumberOfSessions();
-
-    void resetNumberOfSessions();
-
-    double getReadOpsPerSecond();
-
-    double getWriteOpsPerSecond();
-
-    void resetNumberOfOperations();
-
+public class QueryStatDtoComparator implements Comparator<QueryStatDto> {
+    public int compare(QueryStatDto o1, QueryStatDto o2) {
+        return new Long(o1.getDuration()).compareTo(o2.getDuration());
+    }
 }

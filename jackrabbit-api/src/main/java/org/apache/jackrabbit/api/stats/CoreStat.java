@@ -14,15 +14,35 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.jackrabbit.core.jmx;
+package org.apache.jackrabbit.api.stats;
 
 /**
- * This should be the base for any MBean Services built for Jackrabbit
+ * Statistics on core JCR operations
  * 
  */
-public interface JackrabbitBaseMBean {
+public interface CoreStat {
 
-    String DOMAIN = "org.apache.jackrabbit";
+    /** -- SESSION INFO -- **/
+
+    void sessionCreated();
+
+    void sessionLoggedOut();
+
+    long getNumberOfSessions();
+
+    void resetNumberOfSessions();
+
+    /**
+     * @param timeNs
+     *            as given by timeNs = System.nanoTime() - timeNs;
+     */
+    void onSessionOperation(boolean isWrite, long timeNs);
+
+    double getReadOpsPerSecond();
+
+    double getWriteOpsPerSecond();
+
+    void resetNumberOfOperations();
 
     /**
      * If this service is currently registering stats
@@ -32,16 +52,11 @@ public interface JackrabbitBaseMBean {
     boolean isEnabled();
 
     /**
-     * Enables the service
+     * Enables/Disables the service
      * 
+     * @param enabled
      */
-    void enable();
-
-    /**
-     * Disables the service
-     * 
-     */
-    void disable();
+    void setEnabled(boolean enabled);
 
     /**
      * clears all data
