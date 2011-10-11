@@ -14,13 +14,12 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.jackrabbit.core.journal;
+package org.apache.jackrabbit.core.util.db;
 
 import javax.jcr.RepositoryException;
 import javax.sql.DataSource;
 
-import org.apache.jackrabbit.core.util.db.ConnectionFactory;
-import org.apache.jackrabbit.core.util.db.ConnectionHelper;
+import org.apache.jackrabbit.core.journal.JournalException;
 import org.apache.jackrabbit.spi.commons.namespace.NamespaceResolver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

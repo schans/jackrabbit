@@ -28,6 +28,7 @@ import org.apache.jackrabbit.core.util.db.CheckSchemaOperation;
 import org.apache.jackrabbit.core.util.db.ConnectionFactory;
 import org.apache.jackrabbit.core.util.db.ConnectionHelper;
 import org.apache.jackrabbit.core.util.db.DatabaseAware;
+import org.apache.jackrabbit.core.util.db.DatabaseConfig;
 import org.apache.jackrabbit.core.util.db.DbUtility;
 import org.apache.jackrabbit.core.util.db.StreamWrapper;
 import org.apache.jackrabbit.spi.commons.namespace.NamespaceResolver;

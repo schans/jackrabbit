@@ -14,37 +14,36 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.apache.jackrabbit.core.journal;
+package org.apache.jackrabbit.core.util.db;
 
-import org.apache.jackrabbit.core.util.db.CheckSchemaOperation;
-import org.apache.jackrabbit.core.util.db.MSSqlDatabaseConfig;
 
 /**
- * It has the following property in addition to those of the DatabaseJournal:
+ * It has the following property in addition to those of the DatabaseConfig:
  * <ul>
  * <li><code>tableSpace</code>: the MS SQL tablespace to use</li>
  * </ul>
  */
-public class MSSqlDatabaseJournal extends DatabaseJournal {
+public class MSSqlDatabaseConfig extends DatabaseConfig {
 
-    protected MSSqlDatabaseConfig dbConfig = new MSSqlDatabaseConfig();
+    /** the MS SQL table space to use */
+    protected String tableSpace = "";
 
-    /**
-     * Initialize this instance with the default schema and
-     * driver values.
-     */
-    public MSSqlDatabaseJournal() {
+    /** The Oracle tablespace to use for tables */
+    protected String tablespace;
+
+    /** The Oracle tablespace to use for indexes */
+    protected String indexTablespace;
+
+    public MSSqlDatabaseConfig() {
         setDriver("com.microsoft.sqlserver.jdbc.SQLServerDriver");
         setDatabaseType("mssql");
     }
-
     /**
-     * {@inheritDoc}
+     * Returns the configured MS SQL table space.
+     * @return the configured MS SQL table space.
      */
-    @Override
-    protected CheckSchemaOperation createCheckSchemaOperation() {
-        return super.createCheckSchemaOperation().addVariableReplacement(
-            CheckSchemaOperation.TABLE_SPACE_VARIABLE, dbConfig.getTableSpace());
+    public String getTableSpace() {
+        return tableSpace;
     }
 
     /**
@@ -52,6 +51,10 @@ public class MSSqlDatabaseJournal extends DatabaseJournal {
      * @param tableSpace the MS SQL table space.
      */
     public void setTableSpace(String tableSpace) {
-        dbConfig.setTableSpace(tableSpace);
+        if (tableSpace != null && tableSpace.length() > 0) {
+            this.tableSpace = "on " + tableSpace.trim();
+        } else {
+            this.tableSpace = "";
+        }
     }
 }

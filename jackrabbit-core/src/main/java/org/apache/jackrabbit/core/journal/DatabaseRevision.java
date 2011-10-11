@@ -30,6 +30,8 @@ import org.apache.jackrabbit.core.util.db.CheckSchemaOperation;
 import org.apache.jackrabbit.core.util.db.ConnectionFactory;
 import org.apache.jackrabbit.core.util.db.ConnectionHelper;
 import org.apache.jackrabbit.core.util.db.DatabaseAware;
+import org.apache.jackrabbit.core.util.db.DatabaseConfig;
+import org.apache.jackrabbit.core.util.db.DatabaseConfigException;
 import org.apache.jackrabbit.core.util.db.DbUtility;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

@@ -21,6 +21,7 @@ import javax.sql.DataSource;
 import org.apache.jackrabbit.core.util.db.CheckSchemaOperation;
 import org.apache.jackrabbit.core.util.db.ConnectionHelper;
 import org.apache.jackrabbit.core.util.db.OracleConnectionHelper;
+import org.apache.jackrabbit.core.util.db.OracleDatabaseConfig;
 
 /**
  * It has the following properties in addition to those of the DatabaseJournal:
