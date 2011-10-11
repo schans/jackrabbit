@@ -108,18 +108,6 @@ public class DatabaseConfig {
      */
     private boolean schemaCheckEnabled = true;
 
-
-
-//    /**
-//     * The repositories {@link ConnectionFactory}.
-//     */
-//    private ConnectionFactory connectionFactory;
-//
-//
-//    public void setConnectionFactory(ConnectionFactory connectionFactory) {
-//        this.connectionFactory = connectionFactory;
-//    }
-
     public DatabaseConfig() {
         databaseType = "default";
         schemaObjectPrefix = "";

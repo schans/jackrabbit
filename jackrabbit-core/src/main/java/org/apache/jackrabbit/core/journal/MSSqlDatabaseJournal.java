@@ -26,8 +26,7 @@ import org.apache.jackrabbit.core.util.db.CheckSchemaOperation;
  */
 public class MSSqlDatabaseJournal extends DatabaseJournal {
 
-    /** the MS SQL table space to use */
-    protected String tableSpace = "";
+    protected MSSqlDatabaseConfig dbConfig = new MSSqlDatabaseConfig();
 
     /**
      * Initialize this instance with the default schema and
@@ -44,15 +43,7 @@ public class MSSqlDatabaseJournal extends DatabaseJournal {
     @Override
     protected CheckSchemaOperation createCheckSchemaOperation() {
         return super.createCheckSchemaOperation().addVariableReplacement(
-            CheckSchemaOperation.TABLE_SPACE_VARIABLE, tableSpace);
-    }
-
-    /**
-     * Returns the configured MS SQL table space.
-     * @return the configured MS SQL table space.
-     */
-    public String getTableSpace() {
-        return tableSpace;
+            CheckSchemaOperation.TABLE_SPACE_VARIABLE, dbConfig.getTableSpace());
     }
 
     /**
@@ -60,10 +51,6 @@ public class MSSqlDatabaseJournal extends DatabaseJournal {
      * @param tableSpace the MS SQL table space.
      */
     public void setTableSpace(String tableSpace) {
-        if (tableSpace != null && tableSpace.length() > 0) {
-            this.tableSpace = "on " + tableSpace.trim();
-        } else {
-            this.tableSpace = "";
-        }
+        dbConfig.setTableSpace(tableSpace);
     }
 }

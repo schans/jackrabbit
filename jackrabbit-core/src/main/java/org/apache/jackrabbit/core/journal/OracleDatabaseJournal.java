@@ -23,18 +23,13 @@ import org.apache.jackrabbit.core.util.db.ConnectionHelper;
 import org.apache.jackrabbit.core.util.db.OracleConnectionHelper;
 
 /**
- * It has the following property in addition to those of the DatabaseJournal:
+ * It has the following properties in addition to those of the DatabaseJournal:
  * <ul>
  * <li><code>tablespace</code>: the tablespace to use for tables</li>
  * <li><code>indexTablespace</code>: the tablespace to use for indexes</li>
  * </ul>
  */
 public class OracleDatabaseJournal extends DatabaseJournal {
-    /**
-     * The default tablespace clause used when {@link #tablespace} or {@link #indexTablespace}
-     * are not specified.
-     */
-    protected static final String DEFAULT_TABLESPACE_CLAUSE = "";
 
     /**
      * Name of the replacement variable in the DDL for {@link #tablespace}.
@@ -46,67 +41,23 @@ public class OracleDatabaseJournal extends DatabaseJournal {
      */
     protected static final String INDEX_TABLESPACE_VARIABLE = "${indexTablespace}";
 
-    /** The Oracle tablespace to use for tables */
-    protected String tablespace;
-
-    /** The Oracle tablespace to use for indexes */
-    protected String indexTablespace;
-
-    public OracleDatabaseJournal() {
-        setDatabaseType("oracle");
-        setDriver("oracle.jdbc.OracleDriver");
-        setSchemaObjectPrefix("");
-        tablespace = DEFAULT_TABLESPACE_CLAUSE;
-        indexTablespace = DEFAULT_TABLESPACE_CLAUSE;
-    }
+    protected OracleDatabaseConfig dbConfig = new OracleDatabaseConfig();
 
     /**
-     * Returns the configured Oracle tablespace for tables.
-     * @return the configured Oracle tablespace for tables.
+     * {@inheritDoc}
      */
-    public String getTablespace() {
-        return tablespace;
-    }
+    @Override
+    protected CheckSchemaOperation createCheckSchemaOperation() {
+        String tablespace = dbConfig.getTablespace();
+        String indexTablespace = dbConfig.getIndexTablespace();
+        String defaultTableSpaceClause = OracleDatabaseConfig.DEFAULT_TABLESPACE_CLAUSE;
 
-    /**
-     * Sets the Oracle tablespace for tables.
-     * @param tablespaceName the Oracle tablespace for tables.
-     */
-    public void setTablespace(String tablespaceName) {
-        this.tablespace = this.buildTablespaceClause(tablespaceName);
-    }
-    
-    /**
-     * Returns the configured Oracle tablespace for indexes.
-     * @return the configured Oracle tablespace for indexes.
-     */
-    public String getIndexTablespace() {
-        return indexTablespace;
-    }
-    
-    /**
-     * Sets the Oracle tablespace for indexes.
-     * @param tablespace the Oracle tablespace for indexes.
-     */
-    public void setIndexTablespace(String tablespaceName) {
-        this.indexTablespace = this.buildTablespaceClause(tablespaceName);
-    }
-    
-    /**
-     * Constructs the <code>tablespace &lt;tbs name&gt;</code> clause from
-     * the supplied tablespace name. If the name is empty, {@link #DEFAULT_TABLESPACE_CLAUSE}
-     * is returned instead.
-     * 
-     * @param tablespaceName A tablespace name
-     * @return A tablespace clause using the supplied name or
-     * <code>{@value #DEFAULT_TABLESPACE_CLAUSE}</code> if the name is empty
-     */
-    private String buildTablespaceClause(String tablespaceName) {
-        if (tablespaceName == null || tablespaceName.trim().length() == 0) {
-            return DEFAULT_TABLESPACE_CLAUSE;
-        } else {
-            return "tablespace " + tablespaceName.trim();
+        if (defaultTableSpaceClause.equals(indexTablespace) && !defaultTableSpaceClause.equals(tablespace)) {
+            // tablespace was set but not indexTablespace : use the same for both
+            indexTablespace = tablespace;
         }
+        return super.createCheckSchemaOperation().addVariableReplacement(TABLESPACE_VARIABLE, tablespace)
+                .addVariableReplacement(INDEX_TABLESPACE_VARIABLE, indexTablespace);
     }
 
     /**
@@ -119,17 +70,21 @@ public class OracleDatabaseJournal extends DatabaseJournal {
         return helper;
     }
 
+    // ------ Bean setters
     /**
-     * {@inheritDoc}
+     * Sets the Oracle tablespace for tables.
+     * @param tablespaceName the Oracle tablespace for tables.
      */
-    @Override
-    protected CheckSchemaOperation createCheckSchemaOperation() {
-        if (DEFAULT_TABLESPACE_CLAUSE.equals(indexTablespace) && !DEFAULT_TABLESPACE_CLAUSE.equals(tablespace)) {
-            // tablespace was set but not indexTablespace : use the same for both
-            indexTablespace = tablespace;
-        }
-        return super.createCheckSchemaOperation()
-            .addVariableReplacement(TABLESPACE_VARIABLE, tablespace)
-            .addVariableReplacement(INDEX_TABLESPACE_VARIABLE, indexTablespace);
+    public void setTablespace(String tablespaceName) {
+        dbConfig.setTablespace(tablespaceName);
     }
+
+    /**
+     * Sets the Oracle tablespace for indexes.
+     * @param tablespace the Oracle tablespace for indexes.
+     */
+    public void setIndexTablespace(String tablespaceName) {
+        dbConfig.setIndexTablespace(tablespaceName);
+    }
+
 }
