@@ -39,11 +39,6 @@ public class FileRevision implements InstanceRevision {
     private final RandomAccessFile raf;
 
     /**
-     * Cached value.
-     */
-    private long value;
-    
-    /**
      * Flag indicating whether this revision file is closed.
      */
     private boolean closed;
@@ -81,8 +76,7 @@ public class FileRevision implements InstanceRevision {
                 throw new JournalException("Revision file closed.");
             }
             raf.seek(0L);
-            value = raf.readLong();
-            return value;
+            return raf.readLong();
         } catch (IOException e) {
             throw new JournalException("I/O error occurred.", e);
         }
@@ -102,7 +96,6 @@ public class FileRevision implements InstanceRevision {
             raf.seek(0L);
             raf.writeLong(value);
             raf.getFD().sync();
-            this.value = value;
         } catch (IOException e) {
             throw new JournalException("I/O error occurred.", e);
         }

@@ -78,7 +78,7 @@ public abstract class AbstractJournal implements Journal {
      *
      *  Note: this field is not located in the FileJournal class for upgrade reasons (before
      *  JCR-1087 had been fixed all Journals used a revision file on the local file system.
-     *  Also see {@link DatabaseJournal#initInstanceRevisionAndJanitor()}).
+     *  Also see {@link DatabaseJournal#initJanitor()}).
      */
     private String revision;
 

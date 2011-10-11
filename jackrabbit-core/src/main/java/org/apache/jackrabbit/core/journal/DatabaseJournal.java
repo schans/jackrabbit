@@ -16,7 +16,15 @@
  */
 package org.apache.jackrabbit.core.journal;
 
-import org.apache.commons.io.IOUtils;
+import java.io.File;
+import java.io.InputStream;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.util.Calendar;
+
+import javax.jcr.RepositoryException;
+import javax.sql.DataSource;
+
 import org.apache.jackrabbit.core.util.db.CheckSchemaOperation;
 import org.apache.jackrabbit.core.util.db.ConnectionFactory;
 import org.apache.jackrabbit.core.util.db.ConnectionHelper;
@@ -26,18 +34,6 @@ import org.apache.jackrabbit.core.util.db.StreamWrapper;
 import org.apache.jackrabbit.spi.commons.namespace.NamespaceResolver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.io.BufferedReader;
-import java.io.ByteArrayInputStream;
-import java.io.File;
-import java.io.InputStream;
-import java.io.InputStreamReader;
-import java.sql.ResultSet;
-import java.sql.SQLException;
-import java.util.Calendar;
-
-import javax.jcr.RepositoryException;
-import javax.sql.DataSource;
 
 /**
  * Database-based journal implementation. Stores records inside a database table named
@@ -84,11 +80,6 @@ public class DatabaseJournal extends AbstractJournal implements DatabaseAware {
      * Default journal table name, used to check schema completeness.
      */
     private static final String DEFAULT_JOURNAL_TABLE = "JOURNAL";
-
-    /**
-     * Local revisions table name, used to check schema completeness.
-     */
-    private static final String LOCAL_REVISIONS_TABLE = "LOCAL_REVISIONS";
 
     /**
      * Logger.
@@ -176,7 +167,7 @@ public class DatabaseJournal extends AbstractJournal implements DatabaseAware {
     /**
      * The instance that manages the local revision.
      */
-    private DatabaseRevision databaseRevision;
+    private InstanceRevision instanceRevision;
 
     /**
      * SQL statement returning all revisions within a range.
@@ -209,21 +200,6 @@ public class DatabaseJournal extends AbstractJournal implements DatabaseAware {
     protected String cleanRevisionStmtSQL;
 
     /**
-     * SQL statement returning the local revision of this cluster node.
-     */
-    protected String getLocalRevisionStmtSQL;
-
-    /**
-     * SQL statement for inserting the local revision of this cluster node.
-     */
-    protected String insertLocalRevisionStmtSQL;
-
-    /**
-     * SQL statement for updating the local revision of this cluster node.
-     */
-    protected String updateLocalRevisionStmtSQL;
-
-    /**
      * Schema object prefix, bean property.
      */
     protected String schemaObjectPrefix;
@@ -241,8 +217,8 @@ public class DatabaseJournal extends AbstractJournal implements DatabaseAware {
     /**
      * {@inheritDoc}
      */
-    public void setConnectionFactory(ConnectionFactory connnectionFactory) {
-        this.connectionFactory = connnectionFactory;
+    public void setConnectionFactory(ConnectionFactory connectionFactory) {
+        this.connectionFactory = connectionFactory;
     }
 
     /**
@@ -266,13 +242,9 @@ public class DatabaseJournal extends AbstractJournal implements DatabaseAware {
                 createCheckSchemaOperation().run();
             }
 
-            // Make sure that the LOCAL_REVISIONS table exists (see JCR-1087)
-            if (isSchemaCheckEnabled()) {
-                checkLocalRevisionSchema();
-            }
-
             buildSQLStatements();
-            initInstanceRevisionAndJanitor();
+            initInstanceRevision();
+            initJanitor();
         } catch (Exception e) {
             String msg = "Unable to create connection.";
             throw new JournalException(msg, e);
@@ -353,27 +325,52 @@ public class DatabaseJournal extends AbstractJournal implements DatabaseAware {
         }
     }
 
-    /**
-     * Initialize the instance revision manager and the janitor thread.
-     *
-     * @throws JournalException on error
-     */
-    protected void initInstanceRevisionAndJanitor() throws Exception {
-        databaseRevision = new DatabaseRevision();
+    protected void initInstanceRevision() throws JournalException {
+        
+        // TODO: Create own config for instance revsion.
+        DatabaseRevision databaseRevision = new DatabaseRevision(getId());
+        databaseRevision.setConnectionFactory(connectionFactory);
 
-        // Get the local file revision from disk (upgrade; see JCR-1087)
+        databaseRevision.setDriver(driver);
+        databaseRevision.setDatabaseType(databaseType);
+        databaseRevision.setDataSourceName(dataSourceName);
+
+        databaseRevision.setUrl(url);
+        databaseRevision.setUser(user);
+        databaseRevision.setPassword(password);
+
+        databaseRevision.setSchemaCheckEnabled(schemaCheckEnabled);
+
+        // Now write the localFileRevision (or 0 if it does not exist) to the LOCAL_REVISIONS
+        // table, but only if the LOCAL_REVISIONS table has no entry yet for this cluster node
+        databaseRevision.init(getInitialRevision());
+        
+        instanceRevision = databaseRevision;
+    }
+
+    /**
+     * Get the initial default revision. The default is zero unless this
+     * repository is getting upgraded. In that case the revision is read
+     * from the file system. See JCR-1087 for the full story.
+     * @return 0L or the file based revision number for upgrading.
+     * @throws JournalException
+     */
+    private long getInitialRevision() throws JournalException {
         long localFileRevision = 0L;
         if (getRevision() != null) {
             InstanceRevision currentFileRevision = new FileRevision(new File(getRevision()));
             localFileRevision = currentFileRevision.get();
             currentFileRevision.close();
         }
+        return localFileRevision;
+    }
 
-        // Now write the localFileRevision (or 0 if it does not exist) to the LOCAL_REVISIONS
-        // table, but only if the LOCAL_REVISIONS table has no entry yet for this cluster node
-        long localRevision = databaseRevision.init(localFileRevision);
-        log.info("Initialized local revision to " + localRevision);
-
+    /**
+     * Initialize the instance revision manager and the janitor thread.
+     *
+     * @throws JournalException on error
+     */
+    protected void initJanitor() throws Exception {
         // Start the clean-up thread if necessary.
         if (janitorEnabled) {
             janitorThread = new Thread(new RevisionTableJanitor(), "Jackrabbit-ClusterRevisionJanitor");
@@ -389,7 +386,7 @@ public class DatabaseJournal extends AbstractJournal implements DatabaseAware {
      * @see org.apache.jackrabbit.core.journal.Journal#getInstanceRevision()
      */
     public InstanceRevision getInstanceRevision() throws JournalException {
-        return databaseRevision;
+        return instanceRevision;
     }
 
     /**
@@ -554,37 +551,6 @@ public class DatabaseJournal extends AbstractJournal implements DatabaseAware {
     }
 
     /**
-     * Checks if the local revision schema objects exist and creates them if they
-     * don't exist yet.
-     *
-     * @throws Exception if an error occurs
-     */
-    private void checkLocalRevisionSchema() throws Exception {
-        InputStream localRevisionDDLStream = null;
-        InputStream in = DatabaseJournal.class.getResourceAsStream(databaseType + ".ddl");
-        try {
-            BufferedReader reader = new BufferedReader(new InputStreamReader(in));
-            String sql = reader.readLine();
-            while (sql != null) {
-                // Skip comments and empty lines, and select only the statement to create the LOCAL_REVISIONS
-                // table.
-                if (!sql.startsWith("#") && sql.length() > 0 && sql.indexOf(LOCAL_REVISIONS_TABLE) != -1) {
-                    localRevisionDDLStream = new ByteArrayInputStream(sql.getBytes());
-                    break;
-                }
-                // read next sql stmt
-                sql = reader.readLine();
-            }
-        } finally {
-            IOUtils.closeQuietly(in);
-        }
-        // Run the schema check for the single table
-        new CheckSchemaOperation(conHelper, localRevisionDDLStream, schemaObjectPrefix
-                + LOCAL_REVISIONS_TABLE).addVariableReplacement(
-            CheckSchemaOperation.SCHEMA_OBJECT_PREFIX_VARIABLE, schemaObjectPrefix).run();
-    }
-
-    /**
      * Builds the SQL statements. May be overridden by subclasses to allow
      * different table and/or column names.
      */
@@ -606,15 +572,6 @@ public class DatabaseJournal extends AbstractJournal implements DatabaseAware {
             "select MIN(REVISION_ID) from " + schemaObjectPrefix + "LOCAL_REVISIONS";
         cleanRevisionStmtSQL =
             "delete from " + schemaObjectPrefix + "JOURNAL " + "where REVISION_ID < ?";
-        getLocalRevisionStmtSQL =
-            "select REVISION_ID from " + schemaObjectPrefix + "LOCAL_REVISIONS "
-            + "where JOURNAL_ID = ?";
-        insertLocalRevisionStmtSQL =
-            "insert into " + schemaObjectPrefix + "LOCAL_REVISIONS "
-            + "(REVISION_ID, JOURNAL_ID) values (?,?)";
-        updateLocalRevisionStmtSQL =
-            "update " + schemaObjectPrefix + "LOCAL_REVISIONS "
-            + "set REVISION_ID = ? where JOURNAL_ID = ?";
     }
 
     /**
@@ -754,87 +711,6 @@ public class DatabaseJournal extends AbstractJournal implements DatabaseAware {
      */
     public final void setSchemaCheckEnabled(boolean enabled) {
         schemaCheckEnabled = enabled;
-    }
-
-    /**
-     * This class manages the local revision of the cluster node. It
-     * persists the local revision in the LOCAL_REVISIONS table in the
-     * clustering database.
-     */
-    public class DatabaseRevision implements InstanceRevision {
-
-        /**
-         * The cached local revision of this cluster node.
-         */
-        private long localRevision;
-
-        /**
-         * Indicates whether the init method has been called.
-         */
-        private boolean initialized = false;
-
-        /**
-         * Checks whether there's a local revision value in the database for this
-         * cluster node. If not, it writes the given default revision to the database.
-         *
-         * @param revision the default value for the local revision counter
-         * @return the local revision
-         * @throws JournalException on error
-         */
-        protected synchronized long init(long revision) throws JournalException {
-            ResultSet rs = null;
-            try {
-                // Check whether there is an entry in the database.
-                rs = conHelper.exec(getLocalRevisionStmtSQL, new Object[]{getId()}, false, 0);
-                boolean exists = rs.next();
-                if (exists) {
-                    revision = rs.getLong(1);
-                }
-
-                // Insert the given revision in the database
-                if (!exists) {
-                    conHelper.exec(insertLocalRevisionStmtSQL, revision, getId());
-                }
-
-                // Set the cached local revision and return
-                localRevision = revision;
-                initialized = true;
-                return revision;
-
-            } catch (SQLException e) {
-                log.warn("Failed to initialize local revision.", e);
-                throw new JournalException("Failed to initialize local revision", e);
-            } finally {
-                DbUtility.close(rs);
-            }
-        }
-
-        public synchronized long get() {
-            if (!initialized) {
-                throw new IllegalStateException("instance has not yet been initialized");
-            }
-            return localRevision;
-        }
-
-        public synchronized void set(long localRevision) throws JournalException {
-
-            if (!initialized) {
-                throw new IllegalStateException("instance has not yet been initialized");
-            }
-
-            // Update the cached value and the table with local revisions.
-            try {
-                conHelper.exec(updateLocalRevisionStmtSQL, localRevision, getId());
-                this.localRevision = localRevision;
-            } catch (SQLException e) {
-                log.warn("Failed to update local revision.", e);
-                throw new JournalException("Failed to update local revision.", e);
-            }
-        }
-
-        public void close() {
-            // nothing to do
-        }
     }
 
     /**
