@@ -197,7 +197,7 @@ public class DatabaseJournal extends AbstractJournal implements DatabaseAware {
             dbConfig.setSchemaObjectPrefix(conHelper.prepareDbIdentifier(dbConfig.getSchemaObjectPrefix()));
 
             // check if schema objects exist and create them if necessary
-            if (dbConfig.isSchemaCheckEnabled()) {
+            if (dbConfig.isSchemaCheckEnabled() && !isReadOnly()) {
                 createCheckSchemaOperation().run();
             }
 
@@ -237,17 +237,41 @@ public class DatabaseJournal extends AbstractJournal implements DatabaseAware {
             CheckSchemaOperation.SCHEMA_OBJECT_PREFIX_VARIABLE, dbConfig.getSchemaObjectPrefix());
     }
 
+    
+    /**
+     * Initialize the instance revision for managing the local revision
+     * of the cluster node.
+     * @throws JournalException
+     */
     protected void initInstanceRevision() throws JournalException {
-        
-        // TODO: Create own config for instance revsion.
-        DatabaseRevision databaseRevision = new DatabaseRevision(getId(), dbConfig);
-        databaseRevision.setConnectionFactory(connectionFactory);
+        // TODO: Create own config for instance revision.
+        if (isReadOnly()) {
+            // TODO: add option for storing revisions in master db.
+            instanceRevision = new FileRevision(getFileRevisionFile());
+        } else {
+            // This is the normal cluster behavior, which uses one database for the 
+            // global and local revisions.
+            DatabaseRevision databaseRevision = new DatabaseRevision(getId(), dbConfig);
+            databaseRevision.setConnectionFactory(connectionFactory);
+            // Now write the localFileRevision (or 0 if it does not exist) to the LOCAL_REVISIONS
+            // table, but only if the LOCAL_REVISIONS table has no entry yet for this cluster node
+            databaseRevision.init(getInitialRevision());
+            instanceRevision = databaseRevision;
+        }
+    }
 
-        // Now write the localFileRevision (or 0 if it does not exist) to the LOCAL_REVISIONS
-        // table, but only if the LOCAL_REVISIONS table has no entry yet for this cluster node
-        databaseRevision.init(getInitialRevision());
-        
-        instanceRevision = databaseRevision;
+    private File getFileRevisionFile() throws JournalException {
+        if (getRevision() == null) {
+            File repHome = getRepositoryHome();
+            if (repHome == null) {
+                String msg = "Revision not specified.";
+                throw new JournalException(msg);
+            }
+            String revision = new File(repHome, FileRevision.DEFAULT_INSTANCE_FILE_NAME).getPath();
+            log.info("Revision not specified, using: " + revision);
+            setRevision(revision);
+        }
+        return new File(getRevision());
     }
 
     /**
@@ -504,7 +528,7 @@ public class DatabaseJournal extends AbstractJournal implements DatabaseAware {
      */
     protected void initJanitor() throws Exception {
         // Start the clean-up thread if necessary.
-        if (janitorEnabled) {
+        if (janitorEnabled && !isReadOnly()) {
             janitorThread = new Thread(new RevisionTableJanitor(), "Jackrabbit-ClusterRevisionJanitor");
             janitorThread.setDaemon(true);
             janitorThread.start();

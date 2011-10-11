@@ -29,6 +29,11 @@ import java.io.RandomAccessFile;
 public class FileRevision implements InstanceRevision {
 
     /**
+     * Default instance revision file name.
+     */
+    public static final String DEFAULT_INSTANCE_FILE_NAME = "revision.log";
+
+    /**
      * Logger.
      */
     private static final Logger log = LoggerFactory.getLogger(FileRevision.class);

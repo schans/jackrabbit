@@ -83,6 +83,14 @@ public abstract class AbstractJournal implements Journal {
     private String revision;
 
     /**
+     * Flag of whether this is supposed to be a read-only cluster node.
+     *
+     * @since Apache Jackrabbit 2.3.1
+     */
+    private boolean readOnly = false;
+
+
+    /**
      * Repository home.
      */
     private File repHome;
@@ -258,6 +266,9 @@ public abstract class AbstractJournal implements Journal {
      * @throws JournalException if an error occurs
      */
     public void lockAndSync() throws JournalException {
+        if (isReadOnly()) {
+            throw new JournalException("Writes are not allowed on a read-only cluster node.");
+        }
         if (internalVersionManager != null) {
             VersioningLock.ReadLock lock =
                 internalVersionManager.acquireReadLock();
@@ -422,4 +433,24 @@ public abstract class AbstractJournal implements Journal {
      public void setRevision(String revision) {
          this.revision = revision;
      }
+
+     /**
+     * Checks whether this cluster node is read-only.
+     *
+     * @since JR 2.3
+     * @return <code>true</code> for a read-only cluster node
+     */
+    public boolean isReadOnly() {
+        return readOnly;
+    }
+
+    /**
+     * Sets whether this cluster node is read-only.
+     *
+     * @since JR 2.3
+     * @param readOnly <code>true</code> for a read-only cluster node
+     */
+    public void setReadOnly(boolean readOnly) {
+        this.readOnly = readOnly;
+    }
 }
