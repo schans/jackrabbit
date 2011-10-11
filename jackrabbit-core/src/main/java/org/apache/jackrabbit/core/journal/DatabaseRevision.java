@@ -23,7 +23,6 @@ import java.io.InputStreamReader;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 
-import javax.jcr.RepositoryException;
 import javax.sql.DataSource;
 
 import org.apache.commons.io.IOUtils;
@@ -32,7 +31,6 @@ import org.apache.jackrabbit.core.util.db.ConnectionFactory;
 import org.apache.jackrabbit.core.util.db.ConnectionHelper;
 import org.apache.jackrabbit.core.util.db.DatabaseAware;
 import org.apache.jackrabbit.core.util.db.DbUtility;
-import org.apache.jackrabbit.spi.commons.namespace.NamespaceResolver;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -100,46 +98,6 @@ public class DatabaseRevision implements InstanceRevision, DatabaseAware {
     private boolean initialized = false;
 
     /**
-     * Driver name, bean property.
-     */
-    private String driver;
-
-    /**
-     * Connection URL, bean property.
-     */
-    private String url;
-
-    /**
-     * Database type, bean property.
-     */
-    private String databaseType;
-
-    /**
-     * User name, bean property.
-     */
-    private String user;
-
-    /**
-     * Password, bean property.
-     */
-    private String password;
-
-    /**
-     * DataSource logical name, bean property.
-     */
-    private String dataSourceName;
-
-    /**
-     * Schema object prefix, bean property.
-     */
-    protected String schemaObjectPrefix;
-
-    /**
-     * Whether the schema check must be done during initialization, bean property.
-     */
-    private boolean schemaCheckEnabled = true;
-
-    /**
      * The connection helper
      */
     ConnectionHelper conHelper;
@@ -165,14 +123,25 @@ public class DatabaseRevision implements InstanceRevision, DatabaseAware {
     private ConnectionFactory connectionFactory;
 
 
+    /**
+     * The {@link DatabaseConfig}.
+     */
+    private DatabaseConfig dbConfig = new DatabaseConfig();
+    
+    /**
+     * @Inherited
+     */
     public void setConnectionFactory(ConnectionFactory connectionFactory) {
         this.connectionFactory = connectionFactory;
     }
 
     public DatabaseRevision(String id) {
         this.journalId = id;
-        databaseType = "default";
-        schemaObjectPrefix = "";
+    }
+
+    public DatabaseRevision(String id, DatabaseConfig dbConfig) {
+        this(id);
+        this.dbConfig = dbConfig;
     }
 
     /**
@@ -184,7 +153,12 @@ public class DatabaseRevision implements InstanceRevision, DatabaseAware {
      * @throws JournalException on error
      */
     protected synchronized long init(long revision) throws JournalException {
-        initDatabaseParameters();
+        try {
+            dbConfig.initDatabaseParameters(connectionFactory);
+        } catch (DatabaseConfigException e) {
+            String msg = "Unable to initialize database instance revision.";
+            throw new JournalException(msg, e);
+        }
         initDatabaseConnection();
         initDatabaseRevision(revision);
         log.info("DatabaseRevision initialized and local revision to " + localRevision);
@@ -233,16 +207,8 @@ public class DatabaseRevision implements InstanceRevision, DatabaseAware {
         return journalId;
     }
 
-    private DataSource getDataSource() throws Exception {
-        if (getDataSourceName() == null || "".equals(getDataSourceName())) {
-            return connectionFactory.getDataSource(getDriver(), getUrl(), getUser(), getPassword());
-        } else {
-            return connectionFactory.getDataSource(dataSourceName);
-        }
-    }
-
     /**
-     * This method is called from the {@link #init(String, NamespaceResolver)} method of this class and
+     * This method is called from the {@link #initDatabaseConnection()} method of this class and
      * returns a {@link ConnectionHelper} instance which is assigned to the {@code conHelper} field.
      * Subclasses may override it to return a specialized connection helper.
      *
@@ -254,54 +220,16 @@ public class DatabaseRevision implements InstanceRevision, DatabaseAware {
         return new ConnectionHelper(dataSrc, false);
     }
 
-    /**
-     * Completes initialization of this database journal. Base implementation
-     * checks whether the required bean properties <code>driver</code> and
-     * <code>url</code> have been specified and optionally deduces a valid
-     * database type. Should be overridden by subclasses that use a different way to
-     * create a connection and therefore require other arguments.
-     *
-     * @see #getConnection()
-     * @throws JournalException if initialization fails
-     */
-    protected void initDatabaseParameters() throws JournalException {
-        if (driver == null && dataSourceName == null) {
-            String msg = "Driver not specified.";
-            throw new JournalException(msg);
-        }
-        if (url == null && dataSourceName == null) {
-            String msg = "Connection URL not specified.";
-            throw new JournalException(msg);
-        }
-        if (dataSourceName != null) {
-            try {
-                String configuredDatabaseType = connectionFactory.getDataBaseType(dataSourceName);
-                if (DatabaseRevision.class.getResourceAsStream(configuredDatabaseType + ".ddl") != null) {
-                    setDatabaseType(configuredDatabaseType);
-                }
-            } catch (RepositoryException e) {
-                throw new JournalException("failed to get database type", e);
-            }
-        }
-        if (databaseType == null) {
-            try {
-                databaseType = getDatabaseTypeFromURL(url);
-            } catch (IllegalArgumentException e) {
-                String msg = "Unable to derive database type from URL: " + e.getMessage();
-                throw new JournalException(msg);
-            }
-        }
-    }
-
     protected void initDatabaseConnection() throws JournalException {
         try {
-            conHelper = createConnectionHelper(getDataSource());
+            conHelper = createConnectionHelper(dbConfig.getDataSource(connectionFactory));
 
+            // FIXME: move prepareDbIdentifier() to dbConig?
             // make sure schemaObjectPrefix consists of legal name characters only
-            schemaObjectPrefix = conHelper.prepareDbIdentifier(schemaObjectPrefix);
+            dbConfig.setSchemaObjectPrefix(conHelper.prepareDbIdentifier(dbConfig.getSchemaObjectPrefix()));
 
             // Make sure that the LOCAL_REVISIONS table exists (see JCR-1087)
-            if (isSchemaCheckEnabled()) {
+            if (dbConfig.isSchemaCheckEnabled()) {
                 checkLocalRevisionSchema();
             }
 
@@ -339,25 +267,6 @@ public class DatabaseRevision implements InstanceRevision, DatabaseAware {
     }
 
     /**
-     * Derive a database type from a JDBC connection URL. This simply treats the given URL
-     * as delimited by colons and takes the 2nd field.
-     *
-     * @param url JDBC connection URL
-     * @return the database type
-     * @throws IllegalArgumentException if the JDBC connection URL is invalid
-     */
-    private static String getDatabaseTypeFromURL(String url) throws IllegalArgumentException {
-        int start = url.indexOf(':');
-        if (start != -1) {
-            int end = url.indexOf(':', start + 1);
-            if (end != -1) {
-                return url.substring(start + 1, end);
-            }
-        }
-        throw new IllegalArgumentException(url);
-    }
-
-    /**
      * Checks if the local revision schema objects exist and creates them if they
      * don't exist yet.
      *
@@ -365,7 +274,7 @@ public class DatabaseRevision implements InstanceRevision, DatabaseAware {
      */
     private void checkLocalRevisionSchema() throws Exception {
         InputStream localRevisionDDLStream = null;
-        InputStream in = DatabaseRevision.class.getResourceAsStream(databaseType + ".ddl");
+        InputStream in = DatabaseRevision.class.getResourceAsStream(dbConfig.getDatabaseType() + ".ddl");
         try {
             BufferedReader reader = new BufferedReader(new InputStreamReader(in));
             String sql = reader.readLine();
@@ -383,8 +292,8 @@ public class DatabaseRevision implements InstanceRevision, DatabaseAware {
             IOUtils.closeQuietly(in);
         }
         // Run the schema check for the single table
-        new CheckSchemaOperation(conHelper, localRevisionDDLStream, schemaObjectPrefix + LOCAL_REVISIONS_TABLE)
-                .addVariableReplacement(CheckSchemaOperation.SCHEMA_OBJECT_PREFIX_VARIABLE, schemaObjectPrefix).run();
+        new CheckSchemaOperation(conHelper, localRevisionDDLStream, dbConfig.getSchemaObjectPrefix() + LOCAL_REVISIONS_TABLE)
+                .addVariableReplacement(CheckSchemaOperation.SCHEMA_OBJECT_PREFIX_VARIABLE, dbConfig.getSchemaObjectPrefix()).run();
     }
 
     /**
@@ -392,82 +301,47 @@ public class DatabaseRevision implements InstanceRevision, DatabaseAware {
      * different table and/or column names.
      */
     protected void buildSQLStatements() {
-        getLocalRevisionStmtSQL = "select REVISION_ID from " + schemaObjectPrefix + "LOCAL_REVISIONS "
+        getLocalRevisionStmtSQL = "select REVISION_ID from " + dbConfig.getSchemaObjectPrefix() + "LOCAL_REVISIONS "
                 + "where JOURNAL_ID = ?";
-        insertLocalRevisionStmtSQL = "insert into " + schemaObjectPrefix + "LOCAL_REVISIONS "
+        insertLocalRevisionStmtSQL = "insert into " + dbConfig.getSchemaObjectPrefix() + "LOCAL_REVISIONS "
                 + "(REVISION_ID, JOURNAL_ID) values (?,?)";
-        updateLocalRevisionStmtSQL = "update " + schemaObjectPrefix + "LOCAL_REVISIONS "
+        updateLocalRevisionStmtSQL = "update " + dbConfig.getSchemaObjectPrefix() + "LOCAL_REVISIONS "
                 + "set REVISION_ID = ? where JOURNAL_ID = ?";
     }
 
 
-    // ------ Bean getters
-
-    public String getDriver() {
-        return driver;
-    }
-
-    public String getUrl() {
-        return url;
-    }
-
-    public String getUser() {
-        return user;
-    }
-
-    public String getPassword() {
-        return password;
-    }
-
-    public String getDatabaseType() {
-        return databaseType;
-    }
-
-    public String getDataSourceName() {
-        return dataSourceName;
-    }
-
-    public String getSchemaObjectPrefix() {
-        return schemaObjectPrefix;
-    }
-
-    public final boolean isSchemaCheckEnabled() {
-        return schemaCheckEnabled;
-    }
-
     // ------ Bean setters
 
     public void setDriver(String driver) {
-        this.driver = driver;
+        dbConfig.setDriver(driver);
     }
 
     public void setUrl(String url) {
-        this.url = url;
+        dbConfig.setUrl(url);
     }
 
     public void setUser(String user) {
-        this.user = user;
+        dbConfig.setUrl(user);
     }
 
     public void setPassword(String password) {
-        this.password = password;
+        dbConfig.setPassword(password);
     }
 
     public void setDatabaseType(String databaseType) {
-        this.databaseType = databaseType;
+        dbConfig.setDatabaseType(databaseType);
     }
 
     public void setDataSourceName(String dataSourceName) {
-        this.dataSourceName = dataSourceName;
+        dbConfig.setDataSourceName(dataSourceName);
     }
 
     public void setSchemaObjectPrefix(String schemaObjectPrefix) {
-        this.schemaObjectPrefix = schemaObjectPrefix.toUpperCase();
+        dbConfig.setSchemaObjectPrefix(schemaObjectPrefix);
     }
 
-    public final void setSchemaCheckEnabled(boolean enabled) {
-        schemaCheckEnabled = enabled;
+    public void setSchemaCheckEnabled(boolean enabled) {
+        dbConfig.setSchemaCheckEnabled(enabled);
     }
-
 
 }

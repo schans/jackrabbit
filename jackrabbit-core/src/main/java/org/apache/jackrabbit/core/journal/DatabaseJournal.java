@@ -22,7 +22,6 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.Calendar;
 
-import javax.jcr.RepositoryException;
 import javax.sql.DataSource;
 
 import org.apache.jackrabbit.core.util.db.CheckSchemaOperation;
@@ -87,36 +86,6 @@ public class DatabaseJournal extends AbstractJournal implements DatabaseAware {
     static Logger log = LoggerFactory.getLogger(DatabaseJournal.class);
 
     /**
-     * Driver name, bean property.
-     */
-    private String driver;
-
-    /**
-     * Connection URL, bean property.
-     */
-    private String url;
-
-    /**
-     * Database type, bean property.
-     */
-    private String databaseType;
-
-    /**
-     * User name, bean property.
-     */
-    private String user;
-
-    /**
-     * Password, bean property.
-     */
-    private String password;
-
-    /**
-     * DataSource logical name, bean property.
-     */
-    private String dataSourceName;
-
-    /**
      * The connection helper
      */
     ConnectionHelper conHelper;
@@ -160,11 +129,6 @@ public class DatabaseJournal extends AbstractJournal implements DatabaseAware {
     private Thread janitorThread;
 
     /**
-     * Whether the schema check must be done during initialization.
-     */
-    private boolean schemaCheckEnabled = true;
-
-    /**
      * The instance that manages the local revision.
      */
     private InstanceRevision instanceRevision;
@@ -200,19 +164,14 @@ public class DatabaseJournal extends AbstractJournal implements DatabaseAware {
     protected String cleanRevisionStmtSQL;
 
     /**
-     * Schema object prefix, bean property.
-     */
-    protected String schemaObjectPrefix;
-
-    /**
      * The repositories {@link ConnectionFactory}.
      */
     private ConnectionFactory connectionFactory;
 
-    public DatabaseJournal() {
-        databaseType = "default";
-        schemaObjectPrefix = "";
-    }
+    /**
+     * The {@link DatabaseConfig}.
+     */
+    protected DatabaseConfig dbConfig = new DatabaseConfig();
 
     /**
      * {@inheritDoc}
@@ -229,16 +188,16 @@ public class DatabaseJournal extends AbstractJournal implements DatabaseAware {
 
         super.init(id, resolver);
 
-        init();
-
         try {
-            conHelper = createConnectionHelper(getDataSource());
+            dbConfig.init(connectionFactory);
+            conHelper = createConnectionHelper(dbConfig.getDataSource(connectionFactory));
 
+            // FIXME: move prepareDbIdentifier() to dbConig?
             // make sure schemaObjectPrefix consists of legal name characters only
-            schemaObjectPrefix = conHelper.prepareDbIdentifier(schemaObjectPrefix);
+            dbConfig.setSchemaObjectPrefix(conHelper.prepareDbIdentifier(dbConfig.getSchemaObjectPrefix()));
 
             // check if schema objects exist and create them if necessary
-            if (isSchemaCheckEnabled()) {
+            if (dbConfig.isSchemaCheckEnabled()) {
                 createCheckSchemaOperation().run();
             }
 
@@ -250,14 +209,6 @@ public class DatabaseJournal extends AbstractJournal implements DatabaseAware {
             throw new JournalException(msg, e);
         }
         log.info("DatabaseJournal initialized.");
-    }
-
-    private DataSource getDataSource() throws Exception {
-        if (getDataSourceName() == null || "".equals(getDataSourceName())) {
-            return connectionFactory.getDataSource(getDriver(), getUrl(), getUser(), getPassword());
-        } else {
-            return connectionFactory.getDataSource(dataSourceName);
-        }
     }
 
     /**
@@ -276,70 +227,21 @@ public class DatabaseJournal extends AbstractJournal implements DatabaseAware {
     /**
      * This method is called from {@link #init(String, NamespaceResolver)} after the
      * {@link #createConnectionHelper(DataSource)} method, and returns a default {@link CheckSchemaOperation}.
-     * Subclasses can overrride this implementation to get a customized implementation.
+     * Subclasses can override this implementation to get a customized implementation.
      *
      * @return a new {@link CheckSchemaOperation} instance
      */
     protected CheckSchemaOperation createCheckSchemaOperation() {
-        InputStream in = DatabaseJournal.class.getResourceAsStream(databaseType + ".ddl");
-        return new CheckSchemaOperation(conHelper, in, schemaObjectPrefix + DEFAULT_JOURNAL_TABLE).addVariableReplacement(
-            CheckSchemaOperation.SCHEMA_OBJECT_PREFIX_VARIABLE, schemaObjectPrefix);
-    }
-
-    /**
-     * Completes initialization of this database journal. Base implementation
-     * checks whether the required bean properties <code>driver</code> and
-     * <code>url</code> have been specified and optionally deduces a valid
-     * database type. Should be overridden by subclasses that use a different way to
-     * create a connection and therefore require other arguments.
-     *
-     * @see #getConnection()
-     * @throws JournalException if initialization fails
-     */
-    protected void init() throws JournalException {
-        if (driver == null && dataSourceName == null) {
-            String msg = "Driver not specified.";
-            throw new JournalException(msg);
-        }
-        if (url == null && dataSourceName == null) {
-            String msg = "Connection URL not specified.";
-            throw new JournalException(msg);
-        }
-        if (dataSourceName != null) {
-            try {
-                String configuredDatabaseType = connectionFactory.getDataBaseType(dataSourceName);
-                if (DatabaseJournal.class.getResourceAsStream(configuredDatabaseType + ".ddl") != null) {
-                    setDatabaseType(configuredDatabaseType);
-                }
-            } catch (RepositoryException e) {
-                throw new JournalException("failed to get database type", e);
-            }
-        }
-        if (databaseType == null) {
-            try {
-                databaseType = getDatabaseTypeFromURL(url);
-            } catch (IllegalArgumentException e) {
-                String msg = "Unable to derive database type from URL: " + e.getMessage();
-                throw new JournalException(msg);
-            }
-        }
+        InputStream in = DatabaseJournal.class.getResourceAsStream(dbConfig.getDatabaseType() + ".ddl");
+        return new CheckSchemaOperation(conHelper, in, dbConfig.getSchemaObjectPrefix() + DEFAULT_JOURNAL_TABLE).addVariableReplacement(
+            CheckSchemaOperation.SCHEMA_OBJECT_PREFIX_VARIABLE, dbConfig.getSchemaObjectPrefix());
     }
 
     protected void initInstanceRevision() throws JournalException {
         
         // TODO: Create own config for instance revsion.
-        DatabaseRevision databaseRevision = new DatabaseRevision(getId());
+        DatabaseRevision databaseRevision = new DatabaseRevision(getId(), dbConfig);
         databaseRevision.setConnectionFactory(connectionFactory);
-
-        databaseRevision.setDriver(driver);
-        databaseRevision.setDatabaseType(databaseType);
-        databaseRevision.setDataSourceName(dataSourceName);
-
-        databaseRevision.setUrl(url);
-        databaseRevision.setUser(user);
-        databaseRevision.setPassword(password);
-
-        databaseRevision.setSchemaCheckEnabled(schemaCheckEnabled);
 
         // Now write the localFileRevision (or 0 if it does not exist) to the LOCAL_REVISIONS
         // table, but only if the LOCAL_REVISIONS table has no entry yet for this cluster node
@@ -365,47 +267,11 @@ public class DatabaseJournal extends AbstractJournal implements DatabaseAware {
         return localFileRevision;
     }
 
-    /**
-     * Initialize the instance revision manager and the janitor thread.
-     *
-     * @throws JournalException on error
-     */
-    protected void initJanitor() throws Exception {
-        // Start the clean-up thread if necessary.
-        if (janitorEnabled) {
-            janitorThread = new Thread(new RevisionTableJanitor(), "Jackrabbit-ClusterRevisionJanitor");
-            janitorThread.setDaemon(true);
-            janitorThread.start();
-            log.info("Cluster revision janitor thread started; first run scheduled at " + janitorNextRun.getTime());
-        } else {
-            log.info("Cluster revision janitor thread not started");
-        }
-    }
-
     /* (non-Javadoc)
      * @see org.apache.jackrabbit.core.journal.Journal#getInstanceRevision()
      */
     public InstanceRevision getInstanceRevision() throws JournalException {
         return instanceRevision;
-    }
-
-    /**
-     * Derive a database type from a JDBC connection URL. This simply treats the given URL
-     * as delimeted by colons and takes the 2nd field.
-     *
-     * @param url JDBC connection URL
-     * @return the database type
-     * @throws IllegalArgumentException if the JDBC connection URL is invalid
-     */
-    private static String getDatabaseTypeFromURL(String url) throws IllegalArgumentException {
-        int start = url.indexOf(':');
-        if (start != -1) {
-            int end = url.indexOf(':', start + 1);
-            if (end != -1) {
-                return url.substring(start + 1, end);
-            }
-        }
-        throw new IllegalArgumentException(url);
     }
 
     /**
@@ -557,65 +423,59 @@ public class DatabaseJournal extends AbstractJournal implements DatabaseAware {
     protected void buildSQLStatements() {
         selectRevisionsStmtSQL =
             "select REVISION_ID, JOURNAL_ID, PRODUCER_ID, REVISION_DATA from "
-            + schemaObjectPrefix + "JOURNAL where REVISION_ID > ? order by REVISION_ID";
+            + dbConfig.getSchemaObjectPrefix() + "JOURNAL where REVISION_ID > ? order by REVISION_ID";
         updateGlobalStmtSQL =
-            "update " + schemaObjectPrefix + "GLOBAL_REVISION"
+            "update " + dbConfig.getSchemaObjectPrefix() + "GLOBAL_REVISION"
             + " set REVISION_ID = REVISION_ID + 1";
         selectGlobalStmtSQL =
             "select REVISION_ID from "
-            + schemaObjectPrefix + "GLOBAL_REVISION";
+            + dbConfig.getSchemaObjectPrefix() + "GLOBAL_REVISION";
         insertRevisionStmtSQL =
-            "insert into " + schemaObjectPrefix + "JOURNAL"
+            "insert into " + dbConfig.getSchemaObjectPrefix() + "JOURNAL"
             + " (REVISION_ID, JOURNAL_ID, PRODUCER_ID, REVISION_DATA) "
             + "values (?,?,?,?)";
         selectMinLocalRevisionStmtSQL =
-            "select MIN(REVISION_ID) from " + schemaObjectPrefix + "LOCAL_REVISIONS";
+            "select MIN(REVISION_ID) from " + dbConfig.getSchemaObjectPrefix() + "LOCAL_REVISIONS";
         cleanRevisionStmtSQL =
-            "delete from " + schemaObjectPrefix + "JOURNAL " + "where REVISION_ID < ?";
+            "delete from " + dbConfig.getSchemaObjectPrefix() + "JOURNAL " + "where REVISION_ID < ?";
     }
 
-    /**
-     * Bean getters
-     */
-    public String getDriver() {
-        return driver;
+
+    // ------ Bean setters
+
+    public void setDriver(String driver) {
+        dbConfig.setDriver(driver);
     }
 
-    public String getUrl() {
-        return url;
+    public void setUrl(String url) {
+        dbConfig.setUrl(url);
     }
 
-    /**
-     * Get the database type.
-     *
-     * @return the database type
-     */
-    public String getDatabaseType() {
-        return databaseType;
+    public void setUser(String user) {
+        dbConfig.setUrl(user);
     }
 
-    /**
-     * Get the database type.
-     * @deprecated
-     * This method is deprecated; {@link #getDatabaseType} should be used instead.
-     *
-     * @return the database type
-     */
-    public String getSchema() {
-        return databaseType;
+    public void setPassword(String password) {
+        dbConfig.setPassword(password);
     }
 
-    public String getSchemaObjectPrefix() {
-        return schemaObjectPrefix;
+    public void setDatabaseType(String databaseType) {
+        dbConfig.setDatabaseType(databaseType);
     }
 
-    public String getUser() {
-        return user;
+    public void setDataSourceName(String dataSourceName) {
+        dbConfig.setDataSourceName(dataSourceName);
     }
 
-    public String getPassword() {
-        return password;
+    public void setSchemaObjectPrefix(String schemaObjectPrefix) {
+        dbConfig.setSchemaObjectPrefix(schemaObjectPrefix);
     }
+
+    public void setSchemaCheckEnabled(boolean enabled) {
+        dbConfig.setSchemaCheckEnabled(enabled);
+    }
+
+    // ------ JANITOR
 
     public boolean getJanitorEnabled() {
         return janitorEnabled;
@@ -629,55 +489,29 @@ public class DatabaseJournal extends AbstractJournal implements DatabaseAware {
         return janitorNextRun.get(Calendar.HOUR_OF_DAY);
     }
 
-    /**
-     * Bean setters
-     */
-    public void setDriver(String driver) {
-        this.driver = driver;
-    }
-
-    public void setUrl(String url) {
-        this.url = url;
-    }
-
-    /**
-     * Set the database type.
-     *
-     * @param databaseType the database type
-     */
-    public void setDatabaseType(String databaseType) {
-        this.databaseType = databaseType;
-    }
-
-    /**
-     * Set the database type.
-    * @deprecated
-    * This method is deprecated; {@link #getDatabaseType} should be used instead.
-     *
-     * @param databaseType the database type
-     */
-    public void setSchema(String databaseType) {
-        this.databaseType = databaseType;
-    }
-
-    public void setSchemaObjectPrefix(String schemaObjectPrefix) {
-        this.schemaObjectPrefix = schemaObjectPrefix.toUpperCase();
-    }
-
-    public void setUser(String user) {
-        this.user = user;
-    }
-
-    public void setPassword(String password) {
-        this.password = password;
-    }
-
     public void setJanitorEnabled(boolean enabled) {
         this.janitorEnabled = enabled;
     }
 
     public void setJanitorSleep(int sleep) {
         this.janitorSleep = sleep;
+    }
+
+    /**
+     * Initialize the instance revision manager and the janitor thread.
+     *
+     * @throws JournalException on error
+     */
+    protected void initJanitor() throws Exception {
+        // Start the clean-up thread if necessary.
+        if (janitorEnabled) {
+            janitorThread = new Thread(new RevisionTableJanitor(), "Jackrabbit-ClusterRevisionJanitor");
+            janitorThread.setDaemon(true);
+            janitorThread.start();
+            log.info("Cluster revision janitor thread started; first run scheduled at " + janitorNextRun.getTime());
+        } else {
+            log.info("Cluster revision janitor thread not started");
+        }
     }
 
     public void setJanitorFirstRunHourOfDay(int hourOfDay) {
@@ -689,28 +523,6 @@ public class DatabaseJournal extends AbstractJournal implements DatabaseAware {
         janitorNextRun.set(Calendar.MINUTE, 0);
         janitorNextRun.set(Calendar.SECOND, 0);
         janitorNextRun.set(Calendar.MILLISECOND, 0);
-    }
-
-    public String getDataSourceName() {
-        return dataSourceName;
-    }
-
-    public void setDataSourceName(String dataSourceName) {
-        this.dataSourceName = dataSourceName;
-    }
-
-    /**
-     * @return whether the schema check is enabled
-     */
-    public final boolean isSchemaCheckEnabled() {
-        return schemaCheckEnabled;
-    }
-
-    /**
-     * @param enabled set whether the schema check is enabled
-     */
-    public final void setSchemaCheckEnabled(boolean enabled) {
-        schemaCheckEnabled = enabled;
     }
 
     /**
