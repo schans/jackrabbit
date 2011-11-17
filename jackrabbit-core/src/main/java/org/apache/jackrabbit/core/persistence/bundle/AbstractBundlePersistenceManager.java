@@ -569,7 +569,6 @@ public abstract class AbstractBundlePersistenceManager implements
                 PropertyId id = (PropertyId) state.getId();
                 // skip redundant primaryType, mixinTypes and uuid properties
                 if (id.getName().equals(JCR_PRIMARYTYPE)
-                    || id.getName().equals(JCR_MIXINTYPES)
                     || id.getName().equals(JCR_UUID)) {
                     continue;
                 }
@@ -617,7 +616,6 @@ public abstract class AbstractBundlePersistenceManager implements
                 PropertyId id = (PropertyId) state.getId();
                 // skip primaryType pr mixinTypes properties
                 if (id.getName().equals(JCR_PRIMARYTYPE)
-                    || id.getName().equals(JCR_MIXINTYPES)
                     || id.getName().equals(JCR_UUID)) {
                     continue;
                 }

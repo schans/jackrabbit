@@ -80,7 +80,9 @@ public class LocalAuthContext implements AuthContext {
             String name = (String) names.nextElement();
             options.put(name, parameters.getProperty(name));
         }
-        module.initialize(subject, cbHandler, state, options);
+        Map auxParamMap = new HashMap();
+        auxParamMap.putAll(config.getParameters());
+        module.initialize(subject, cbHandler, new HashMap(), auxParamMap);
 
         try {
             if (!(module.login() && module.commit())) {
